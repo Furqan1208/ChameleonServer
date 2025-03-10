@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - DB_NAME=inquiro
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - OPEN_ROUTER_API=${OPEN_ROUTER_API}
+    depends_on:
+      - mongodb
+    restart: always
+
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+
+volumes:
+  mongodb_data: 

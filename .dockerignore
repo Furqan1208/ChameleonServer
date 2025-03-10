@@ -1,0 +1,21 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+myenv/
+ENV/
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Docker
+mongodb_data/
