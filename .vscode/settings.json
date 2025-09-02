@@ -1,0 +1,8 @@
+{
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+  "ruff.lint.enable": true,
+  "ruff.lineLength": 88,
+}
