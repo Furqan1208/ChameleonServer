@@ -21,6 +21,7 @@ var/
 *.egg
 
 # Virtual Environment
+pyenv/
 venv/
 myenv/
 ENV/

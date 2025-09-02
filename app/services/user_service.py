@@ -1,9 +1,12 @@
 # Import necessary modules and models.
-from bson import ObjectId
-from app.models.user import UserModel, UserCreate, UserUpdate
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime
 from typing import List, Optional
+
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.models.user import UserCreate, UserModel, UserUpdate
+
 
 # Service class to encapsulate user-related database operations.
 class UserService:
@@ -47,7 +50,7 @@ class UserService:
         # Convert the Pydantic model to a dictionary.
         user_data = user.model_dump()
         # Set the creation timestamp.
-        user_data["created_at"] = datetime.utcnow()
+        user_data["created_at"] = datetime.now()
         # Insert the new user document.
         result = await self.collection.insert_one(user_data)
         # Retrieve the newly created user from the database.
@@ -55,17 +58,20 @@ class UserService:
         return UserModel(**created_user)
 
     # Update an existing user.
-    async def update_user(self, user_id: str, user_update: UserUpdate) -> Optional[UserModel]:
+    async def update_user(
+        self, user_id: str, user_update: UserUpdate
+    ) -> Optional[UserModel]:
         # Validate the user_id.
         if not ObjectId.is_valid(user_id):
             return None
         # Create a dict with only the fields that have been provided (non-None).
-        update_data = {k: v for k, v in user_update.model_dump().items() if v is not None}
+        update_data = {
+            k: v for k, v in user_update.model_dump().items() if v is not None
+        }
         if update_data:
             # Update the document in MongoDB.
             await self.collection.update_one(
-                {"_id": ObjectId(user_id)},
-                {"$set": update_data}
+                {"_id": ObjectId(user_id)}, {"$set": update_data}
             )
         # Retrieve and return the updated user.
         updated_user = await self.collection.find_one({"_id": ObjectId(user_id)})

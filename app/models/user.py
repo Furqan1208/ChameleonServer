@@ -1,8 +1,10 @@
 # Import necessary modules from Pydantic, typing, datetime, and bson.
-from pydantic import BaseModel, Field, EmailStr, root_validator
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
 from bson import ObjectId
+from pydantic import BaseModel, EmailStr, Field, root_validator
+
 
 # Custom type for MongoDB ObjectId that works with Pydantic v2.
 class PyObjectId(str):
@@ -18,6 +20,7 @@ class PyObjectId(str):
             raise ValueError("Invalid ObjectId")
         # Return the value as a string.
         return str(v)
+
 
 # Main Pydantic model for a user.
 class UserModel(BaseModel):
@@ -55,9 +58,10 @@ class UserModel(BaseModel):
                 "profile_picture": "https://example.com/profile.jpg",
                 "favorites": [],
                 "created_at": "2023-01-01T00:00:00Z",
-                "updated_at": "2023-01-01T00:00:00Z"
+                "updated_at": "2023-01-01T00:00:00Z",
             }
         }
+
 
 # Model for creating a new user.
 class UserCreate(BaseModel):
@@ -73,10 +77,11 @@ class UserCreate(BaseModel):
             "example": {
                 "name": "John Doe",
                 "email": "johndoe@example.com",
-                "profile_picture": "https://example.com/profile.jpg"
+                "profile_picture": "https://example.com/profile.jpg",
             }
         }
 
+
 # Model for updating an existing user. All fields are optional.
 class UserUpdate(BaseModel):
-    name: Optional[str] = None          
+    name: Optional[str] = None

@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   api:
@@ -9,7 +9,7 @@ services:
       - .:/app
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/
-      - DB_NAME=inquiro
+      - DB_NAME=fyp
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - OPEN_ROUTER_API=${OPEN_ROUTER_API}
     depends_on:
@@ -25,4 +25,4 @@ services:
     restart: always
 
 volumes:
-  mongodb_data: 
+  mongodb_data:

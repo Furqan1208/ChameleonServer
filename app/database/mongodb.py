@@ -1,8 +1,9 @@
-from motor import motor_asyncio
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from motor import motor_asyncio
 
 # Load environment variables
 load_dotenv()
@@ -14,6 +15,7 @@ DB_NAME = os.getenv("DB_NAME", "app_database")
 # Database client (global variable)
 client = None
 
+
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,7 +23,7 @@ async def lifespan(app: FastAPI):
     global client
     try:
         client = motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
-        await client.admin.command('ping')
+        await client.admin.command("ping")
         print("Connected to MongoDB Atlas")
         yield
     except Exception as e:
@@ -33,8 +35,11 @@ async def lifespan(app: FastAPI):
             client.close()
             print("MongoDB connection closed")
 
+
 # Database access function
 async def get_database():
     if client is None:
-        raise RuntimeError("Database client not initialized. Make sure to use the app's lifespan.")
+        raise RuntimeError(
+            "Database client not initialized. Make sure to use the app's lifespan."
+        )
     return client[DB_NAME]
