@@ -1,51 +1,5 @@
-# 🚀 FastAPI REST Backend with MongoDB
 
-<div align="center">
 
-![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-
-A production-ready template for building scalable RESTful APIs with FastAPI and MongoDB.
-
-</div>
-
-## ✨ Features
-
-- **⚡ FastAPI**: High-performance, easy-to-use web framework
-- **🍃 MongoDB**: Asynchronous NoSQL database integration with Motor
-- **🔍 Swagger UI**: Interactive API documentation out-of-the-box
-- **🔒 JWT Auth**: Ready-to-use authentication system
-- **🧩 Modular Design**: Clean architecture with separation of concerns
-- **🐳 Docker Ready**: Containerized deployment with Docker Compose
-- **🔄 Async/Await**: Fully asynchronous API endpoints
-- **📊 Pydantic Models**: Robust data validation and serialization
-
-## 📋 Project Structure
-
-```
-fastapi-mongodb-template/
-├── app/
-│   ├── __init__.py            # Package initialization
-│   ├── main.py                # Application entry point
-│   ├── models/                # Data models
-│   │   ├── user.py            # User schema definitions
-│   ├── controllers/           # API route handlers
-│   │   ├── user_routes.py     # User endpoints
-│   ├── services/              # Business logic
-│   │   ├── user_service.py    # User operations
-│   ├── database/              # Database connections
-│   │   ├── mongodb.py         # MongoDB configuration
-│   └── utils/                 # Utility functions
-│       └── auth.py            # Authentication helpers
-├── requirements.txt           # Python dependencies
-├── .env.example               # Environment variables template
-├── Dockerfile                 # Container configuration
-└── docker-compose.yml         # Multi-container setup
-```
-
-## 🚀 Quick Start
 
 ### Prerequisites
 
