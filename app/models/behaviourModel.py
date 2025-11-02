@@ -25,6 +25,23 @@ class CallEntry(BaseModel):
     pretty_return: Optional[str] = None
 
 
+class Environ(BaseModel):
+    Username: str
+    ComputerName: str
+    WindowsPath: str
+    TempPath: str
+    CommandLine: str
+    RegisteredOwner: str
+    RegisteredOrganization: str
+    ProductName: str
+    SystemVolumeSerialNumber: str
+    SystemVolumeGUID: str
+    MachineGUID: str
+    MainExeBase: str
+    MainExeSize: str
+    Bitness: str
+
+
 class FileActivities(BaseModel):
     read_files: List[str] = Field(default_factory=list)
     write_files: List[str] = Field(default_factory=list)
@@ -45,8 +62,8 @@ class Process(BaseModel):
     threads: List[str] = Field(
         default_factory=list, description="Thread IDs for this process"
     )
-    environ: Dict[str, Any] = Field(
-        default_factory=dict, description="Environment variables / dictionary"
+    environ: List[Environ] = Field(
+        default_factory=list, description="Environment variables / dictionary"
     )
     file_activities: FileActivities = Field(
         default_factory=FileActivities,
