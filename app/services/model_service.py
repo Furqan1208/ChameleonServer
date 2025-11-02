@@ -1,62 +1,77 @@
 import asyncio
-import base64
+import json
 import os
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from huggingface_hub import InferenceClient
+from openai import OpenAI
 
 load_dotenv()
 
 
 class ModelService:
     def __init__(self):
-        self.default_model = os.getenv("DEFAULT_AI_MODEL", "gpt-3.5-turbo")
-        self.enabled_models = os.getenv("ENABLED_MODELS", "gpt-3.5-turbo").split(",")
+        self.default_model = os.getenv("DEFAULT_AI_MODEL", "gemini-2.5-flash")
+        self.enabled_models = os.getenv("ENABLED_MODELS", "gemini-2.5-flash").split(",")
+
+        self.gemini_client = None
+        if os.getenv("GEMINI_API_KEY"):
+            self.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+        self.hf_client = None
+        if os.getenv("HUGGINGFACE_TOKEN"):
+            self.hf_client = InferenceClient(token=os.getenv("HUGGINGFACE_TOKEN"))
+
+        self.openrouter_client = None
+        if os.getenv("OPENROUTER_API_KEY"):
+            self.openrouter_client = OpenAI(
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+            )
+
         self.model_configs = {
-            "gpt-3.5-turbo": {
-                "api_url": "https://api.openai.com/v1/chat/completions",
-                "headers": {"Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"},
-                "payload_template": self._build_openai_payload,
+            "gemini-2.5-flash": {
+                "provider": "gemini",
+                "model_name": "gemini-2.5-flash",
+                "client": self.gemini_client,
             },
-            "gemini": {
-                "api_url": "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent",
-                "headers": {"x-goog-api-key": os.getenv("GOOGLE_API_KEY")},
-                "payload_template": self._build_gemini_payload,
+            "gemini-2.5-pro": {
+                "provider": "gemini",
+                "model_name": "gemini-2.5-pro",
+                "client": self.gemini_client,
             },
-            "llama": {
-                "api_url": "https://api.together.xyz/inference",
-                "headers": {"Authorization": f"Bearer {os.getenv('TOGETHER_API_KEY')}"},
-                "payload_template": self._build_llama_payload,
+            "llama-3.1-8b": {
+                "provider": "openrouter",
+                "model_name": "meta-llama/llama-3.1-8b-instruct:free",
+                "client": self.openrouter_client,
             },
-            "mistral": {
-                "api_url": "https://api.mistral.ai/v1/chat/completions",
-                "headers": {"Authorization": f"Bearer {os.getenv('MISTRAL_API_KEY')}"},
-                "payload_template": self._build_mistral_payload,
+            "llama-3.2-3b": {
+                "provider": "openrouter",
+                "model_name": "meta-llama/llama-3.2-3b-instruct:free",
+                "client": self.openrouter_client,
             },
-            "deepseek": {
-                "api_url": "https://api.openrouter.ai/api/v1/chat/completions",
-                "headers": {
-                    "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
-                },
-                "payload_template": self._build_deepseek_payload,
+            "mistral-7b": {  # empty response
+                "provider": "openrouter",
+                "model_name": "mistralai/mistral-7b-instruct:free",
+                "client": self.openrouter_client,
             },
-            "qwen": {
-                "api_url": "https://api-inference.huggingface.co/models/Qwen/Qwen-14B-Chat",
-                "headers": {
-                    "Authorization": f"Bearer {os.getenv('HUGGINGFACE_TOKEN')}"
-                },
-                "payload_template": self._build_qwen_payload,
+            "MiniMaxAI": {
+                "provider": "huggingface",
+                "model_name": "MiniMaxAI/MiniMax-M2",
+                "client": self.hf_client,
             },
-            "phi3": {
-                "api_url": "https://api.azure.com/v1/deployments/phi-3/chat/completions",
-                "headers": {"api-key": os.getenv("AZURE_API_KEY")},
-                "payload_template": self._build_phi3_payload,
+            "gpt-oss-20b": {
+                "provider": "huggingface",
+                "model_name": "openai/gpt-oss-20b",
+                "client": self.hf_client,
             },
         }
 
         self.max_retries = int(os.getenv("MAX_RETRIES", "3"))
-        self.timeout = int(os.getenv("REQUEST_TIMEOUT", "30"))
+        self.timeout = int(os.getenv("REQUEST_TIMEOUT", "60"))
 
     async def process_request(
         self,
@@ -71,9 +86,21 @@ class ModelService:
             raise ValueError(f"Model {model_to_use} not supported")
 
         config = self.model_configs[model_to_use]
-        payload = config["payload_template"](prompt, file_content, filename)
 
-        return await self._make_api_call(config, payload, file_content, filename)
+        if not config["client"]:
+            raise ValueError(f"API key not configured for {model_to_use}")
+
+        full_prompt = self._prepare_prompt(prompt, file_content, filename)
+
+        provider = config["provider"]
+        if provider == "gemini":
+            return await self._call_gemini(config, full_prompt)
+        elif provider == "openrouter":
+            return await self._call_openrouter(config, full_prompt)
+        elif provider == "huggingface":
+            return await self._call_huggingface(config, full_prompt)
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
 
     async def process_multi_model_batch(
         self, requests: List[Dict[str, Any]]
@@ -103,218 +130,171 @@ class ModelService:
 
         return processed_results
 
-    async def _make_api_call(
+    def _prepare_prompt(
         self,
-        config: Dict[str, Any],
-        payload: Dict[str, Any],
-        file_content: Optional[bytes],
-        filename: Optional[str],
-    ) -> Dict[str, Any]:
+        prompt: str,
+        file_content: Optional[bytes] = None,
+        filename: Optional[str] = None,
+    ) -> str:
+        """Prepare full prompt with optional file content."""
+        if not file_content:
+            return prompt
+
+        file_text = self._prepare_file_content(file_content, filename)
+        if file_text:
+            return f"{prompt}\n\n{file_text}"
+        return prompt
+
+    def _prepare_file_content(
+        self, file_content: Optional[bytes], filename: Optional[str]
+    ) -> Optional[str]:
+        """
+        Decode and prepare file content for text-based files (JSON, TXT, MD).
+        Returns formatted string with file type identification.
+        """
+        if not file_content:
+            return None
+
+        try:
+            content_str = file_content.decode("utf-8")
+
+            file_type = self._get_file_type(filename)
+
+            if file_type == "json":
+                try:
+                    json_data = json.loads(content_str)
+                    formatted_content = json.dumps(json_data, indent=2)
+                    return f"**JSON File Content:**\n```json\n{formatted_content}\n```"
+                except json.JSONDecodeError:
+                    return f"**JSON File Content (Raw):**\n```\n{content_str}\n```"
+
+            elif file_type == "markdown":
+                return f"**Markdown File Content:**\n{content_str}"
+
+            else:  # text file
+                return f"**Text File Content:**\n```\n{content_str}\n```"
+
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                "Unable to decode file as UTF-8 text. Expected JSON, TXT, or MD file."
+            ) from exc
+
+    def _get_file_type(self, filename: Optional[str]) -> str:
+        """Determine file type from filename extension."""
+        if not filename:
+            return "text"
+
+        filename_lower = filename.lower()
+        if filename_lower.endswith(".json"):
+            return "json"
+        elif filename_lower.endswith(".md"):
+            return "markdown"
+        else:
+            return "text"
+
+    async def _call_gemini(self, config: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+        """Call Gemini API using official SDK."""
         for attempt in range(self.max_retries):
             try:
-                async with aiohttp.ClientSession() as session:
-                    timeout = aiohttp.ClientTimeout(total=self.timeout)
+                response = await asyncio.to_thread(
+                    config["client"].models.generate_content,
+                    model=config["model_name"],
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                        max_output_tokens=8192,  # can remove limitations
+                    ),
+                )
 
-                    if file_content:
-                        form_data = aiohttp.FormData()
-                        for key, value in payload.items():
-                            if isinstance(value, str):
-                                form_data.add_field(key, value)
-                            else:
-                                form_data.add_field(key, value, filename=filename)
-
-                        async with session.post(
-                            config["api_url"],
-                            headers=config["headers"],
-                            data=form_data,
-                            timeout=timeout,
-                        ) as response:
-                            result = await response.json()
-                    else:
-                        async with session.post(
-                            config["api_url"],
-                            headers=config["headers"],
-                            json=payload,
-                            timeout=timeout,
-                        ) as response:
-                            result = await response.json()
-
-                    if response.status == 200:
-                        return self._parse_response(config, result)
-                    elif response.status == 429:
-                        await asyncio.sleep(2**attempt)
-                        continue
-                    else:
-                        raise Exception(f"API error: {result}")
-
-            except asyncio.TimeoutError as e:
-                if attempt == self.max_retries - 1:
-                    raise Exception("Request timeout") from e
-                continue
+                return {
+                    "response": response.text,
+                    "model": config["model_name"],
+                }
             except Exception as e:
+                if "429" in str(e) or "quota" in str(e).lower():
+                    if attempt < self.max_retries - 1:
+                        wait_time = 2**attempt
+                        print(f"Rate limited. Waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
                 if attempt == self.max_retries - 1:
-                    raise Exception(f"API call failed: {str(e)}") from e
-                continue
+                    raise Exception(f"Gemini API call failed: {str(e)}") from e
+                await asyncio.sleep(1)
 
         raise Exception("Max retries exceeded")
 
-    def _build_openai_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
+    async def _call_openrouter(
+        self, config: Dict[str, Any], prompt: str
     ) -> Dict[str, Any]:
-        messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
+        """Call OpenRouter API using OpenAI SDK."""
+        for attempt in range(self.max_retries):
+            try:
+                response = await asyncio.to_thread(
+                    config["client"].chat.completions.create,
+                    model=config["model_name"],
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4096,  # can remove limitations
+                    temperature=0.7,
+                )
 
-        if file_content:
-            messages[0]["content"] = [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{file_content}"},
-                },
-            ]
-
-        return {
-            "model": "gpt-4-vision-preview",
-            "messages": messages,
-            "max_tokens": 1000,
-        }
-
-    def _build_gemini_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        content: Dict[str, Any] = {"contents": [{"parts": [{"text": prompt}]}]}
-        if file_content:
-            # encode bytes to base64 string so the payload values are all strings
-            file_b64 = base64.b64encode(file_content).decode("utf-8")
-            content["contents"][0]["parts"].append(
-                {
-                    "inline_data": {
-                        "mime_type": self._get_media_type(filename),
-                        "data": file_b64,
+                return {
+                    "response": response.choices[0].message.content,
+                    "model": config["model_name"],
+                    "usage": {
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
                     }
+                    if response.usage
+                    else {},
                 }
-            )
-        return content
+            except Exception as e:
+                if "429" in str(e) or "rate_limit" in str(e).lower():
+                    if attempt < self.max_retries - 1:
+                        wait_time = 2**attempt
+                        print(f"Rate limited. Waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                if attempt == self.max_retries - 1:
+                    raise Exception(f"OpenRouter API call failed: {str(e)}") from e
+                await asyncio.sleep(1)
 
-    def _build_llama_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
+        raise Exception("Max retries exceeded")
+
+    async def _call_huggingface(
+        self, config: Dict[str, Any], prompt: str
     ) -> Dict[str, Any]:
-        return {
-            "model": "meta-llama/Llama-3.1-70b-chat",
-            "prompt": prompt,
-            "max_tokens": 1000,
-        }
+        """Call Hugging Face API using official SDK."""
+        for attempt in range(self.max_retries):
+            try:
+                response = await asyncio.to_thread(
+                    config["client"].chat.completions.create,
+                    model=config["model_name"],
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                result = response.choices[0].message["content"]
 
-    def _build_mistral_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return {
-            "model": "mistral-nemo",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-        }
+                return {
+                    "response": result,
+                    "model": config["model_name"],
+                }
+            except Exception as e:
+                if "503" in str(e) or "loading" in str(e).lower():
+                    if attempt < self.max_retries - 1:
+                        wait_time = 5 * (attempt + 1)  # HF models may need loading time
+                        print(f"Model loading. Waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                if attempt == self.max_retries - 1:
+                    raise Exception(f"Hugging Face API call failed: {str(e)}") from e
+                await asyncio.sleep(1)
 
-    def _build_deepseek_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return {
-            "model": "deepseek/deepseek-v3",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-        }
-
-    def _build_qwen_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return {"inputs": prompt}
-
-    def _build_phi3_payload(
-        self,
-        prompt: str,
-        file_content: Optional[bytes] = None,
-        filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return {
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-        }
-
-    def _parse_response(self, config: Dict[str, Any], response: Any) -> Dict[str, Any]:
-        api_url = config["api_url"]
-
-        if "openai.com" in api_url:
-            return {
-                "response": response["choices"][0]["message"]["content"],
-                "model": "gpt-3.5-turbo",
-            }
-        elif "googleapis.com" in api_url:
-            return {
-                "response": response["candidates"][0]["content"]["parts"][0]["text"],
-                "model": "gemini",
-            }
-        elif "together.xyz" in api_url:
-            return {"response": response["output"]["text"], "model": "llama"}
-        elif "mistral.ai" in api_url:
-            return {
-                "response": response["choices"][0]["message"]["content"],
-                "model": "mistral",
-            }
-        elif "openrouter.ai" in api_url:
-            return {
-                "response": response["choices"][0]["message"]["content"],
-                "model": "deepseek",
-            }
-        elif "huggingface.co" in api_url:
-            return {"response": response[0]["generated_text"], "model": "qwen"}
-        elif "azure.com" in api_url:
-            return {
-                "response": response["choices"][0]["message"]["content"],
-                "model": "phi3",
-            }
-        else:
-            return {"response": response}
-
-    def _get_media_type(self, filename: Optional[str]) -> str:
-        if not filename:
-            return "text/plain"
-
-        extensions = {
-            ".txt": "text/plain",
-            ".md": "text/markdown",
-            ".json": "application/json",
-            ".py": "text/x-python",
-            ".js": "text/javascript",
-            ".html": "text/html",
-            ".css": "text/css",
-            ".xml": "application/xml",
-            ".yaml": "application/x-yaml",
-            ".yml": "application/x-yaml",
-        }
-
-        for ext, media_type in extensions.items():
-            if filename.lower().endswith(ext):
-                return media_type
-        return "text/plain"
+        raise Exception("Max retries exceeded")
 
     def get_available_models(self) -> List[str]:
+        """Return list of available model names."""
         return list(self.model_configs.keys())
 
     def get_model_config(self, model_name: str) -> Optional[Dict[str, Any]]:
+        """Get configuration for a specific model."""
         return self.model_configs.get(model_name)

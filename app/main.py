@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.controllers.analysis_routes import router as analysis_router
 from app.controllers.user_routes import router as user_router
 from app.database.mongodb import lifespan
 
@@ -18,6 +19,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(user_router)
+app.include_router(analysis_router)
 
 
 @app.get("/")

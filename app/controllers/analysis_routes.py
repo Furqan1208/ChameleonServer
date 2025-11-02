@@ -31,26 +31,41 @@ async def upload_and_analyze_file(
     and process with AI model.
     """
     try:
-        cape_report = await analysis_service.upload_and_analyze(file)
-        if cape_report is None:
+        # --- STEP 1: Read uploaded file ---
+        file_content = await file.read()
+
+        if not file_content:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get CAPEv2 analysis report",
+                detail="Uploaded file is empty.",
             )
 
-        # Placeholder for parsing logic
-        # parsed_data = await analysis_service.parse_cape_report(cape_report)
-        # parsed_data = cape_report
+        # --- STEP 2: (Optional) CAPEv2 analysis logic ---
+        # cape_report = await analysis_service.upload_and_analyze(file)
+        # if cape_report is None:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Failed to get CAPEv2 analysis report",
+        #     )
 
-        # Load the standard prompt from file
-        with open("standard_prompt.md", "r") as f:
-            prompt = f.read()
+        # --- STEP 3: Load standard prompt ---
+        # with open("app/templates/standard_prompt.md", "r") as f:
+        #     prompt = f.read()
 
+        # --- STEP 4: Process file with model service ---
         ai_result = await model_service.process_request(
-            prompt=prompt, file_content=None, filename=None
+            prompt="what are you capable of?",
+            file_content=file_content,
+            filename=file.filename,
         )
 
-        return {"status": "success", "cape_report": cape_report, "ai_result": ai_result}
+        # --- STEP 5: Return response ---
+        return {
+            "status": "success",
+            "ai_result": ai_result,
+            "filename": file.filename,
+            "file_size_bytes": len(file_content),
+        }
 
     except Exception as e:
         raise HTTPException(
