@@ -306,7 +306,7 @@ class OutputManager:
             f.write(f"  Reduction: {meta.get('reduction_percentage', '0%')}\n")
 
 
-class CAPEMasterParser:
+class ParserService:
     def __init__(self, models_dir: Path):
         self.model_loader = ModelLoader(models_dir)
         self.report_extractor = ReportExtractor()
@@ -400,7 +400,7 @@ def main():
     print(f"   Output Directory: {output_dir}")
     print()
 
-    parser = CAPEMasterParser(models_dir)
+    parser = ParserService(models_dir)
 
     try:
         results = parser.parse_complete_report(report_path, output_dir)

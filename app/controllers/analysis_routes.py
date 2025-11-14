@@ -1,9 +1,13 @@
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.mongodb import get_database
 from app.services.analysis_service import AnalysisService
 from app.services.model_service import ModelService
+from app.services.parser_service import ParserService
 
 router = APIRouter(
     prefix="/analysis",
@@ -20,52 +24,27 @@ async def get_model_service():
     return ModelService()
 
 
+async def get_parser_service():
+    return ParserService(models_dir=Path("app/models"))
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_and_analyze_file(
     file: UploadFile = File(...),
     analysis_service: AnalysisService = Depends(get_analysis_service),
     model_service: ModelService = Depends(get_model_service),
+    parser_service: ParserService = Depends(get_parser_service),
 ):
     """
     Upload a malware file to CAPEv2 server for analysis, parse the result,
     and process with AI model.
     """
     try:
-        # --- STEP 1: Read uploaded file ---
-        file_content = await file.read()
+        # --- STEP 1: use analysis service ---
+        # --- STEP 2: use parser service ---
+        # --- STEP 3: use model service ---
 
-        if not file_content:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded file is empty.",
-            )
-
-        # --- STEP 2: (Optional) CAPEv2 analysis logic ---
-        # cape_report = await analysis_service.upload_and_analyze(file)
-        # if cape_report is None:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="Failed to get CAPEv2 analysis report",
-        #     )
-
-        # --- STEP 3: Load standard prompt ---
-        # with open("app/templates/standard_prompt.md", "r") as f:
-        #     prompt = f.read()
-
-        # --- STEP 4: Process file with model service ---
-        ai_result = await model_service.process_request(
-            prompt="what are you capable of?",
-            file_content=file_content,
-            filename=file.filename,
-        )
-
-        # --- STEP 5: Return response ---
-        return {
-            "status": "success",
-            "ai_result": ai_result,
-            "filename": file.filename,
-            "file_size_bytes": len(file_content),
-        }
+        print("working")
 
     except Exception as e:
         raise HTTPException(
