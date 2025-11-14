@@ -32,7 +32,7 @@ class WhitelistFilter:
         r'/(?:usr|var|etc|home|tmp|opt|bin|sbin|dev|lib|mnt|root)(?:/[^<>:"|?*\\]+)*\.[a-z0-9]+',
         r'/home/[^/]+/[^<>:"|?*\\]*',
         r'/tmp/[^<>:"|?*\\]*',
-        r"\b(?:Windows|System32|SysWOW64|Program Files|ProgramData|AppData|Local|Roaming|Temp|Temporary|Documents|Downloads|Desktop)\b",
+        r"\b(?:Windows|System32|SysWOW64|Program Files|ProgramData|AppData|Local|Roaming|Temp|Temporary|Documents|Downloads|Desktop)\b",  # noqa: E501
         r"\b(?:Users|Public|Administrator|Default|All Users)\b",
     ]
 

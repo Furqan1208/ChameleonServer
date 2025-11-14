@@ -490,14 +490,14 @@ class CAPEReportProcessor:
 
         if extracted_count > 0:
             print(
-                f"    Extraction Time: {self_extract.get('extracted_files_time')} seconds"
+                f"Extraction Time: {self_extract.get('extracted_files_time')} seconds"
             )
             for ef in self_extract.get("extracted_files", [])[:3]:
                 print(f"      - {ef.get('name')} ({ef.get('size')} bytes)")
 
         if cleaned_data.get("cape_type") or cleaned_data.get("cape_type_code"):
             print(
-                f"    CAPE Type: {cleaned_data.get('cape_type')} (Code: {cleaned_data.get('cape_type_code')})"
+                f"CAPE Type: {cleaned_data.get('cape_type')} (Code: {cleaned_data.get('cape_type_code')})"  # noqa: E501
             )
 
 

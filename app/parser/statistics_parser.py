@@ -3,30 +3,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
-
 from app.utils.filtration_and_extraction import clean_empty_values
-
-
-class StatEntry(BaseModel):
-    name: str
-    time: float
-
-    class Config:
-        extra = "ignore"
-
-
-class StatisticsSection(BaseModel):
-    processing_summary: List[Dict[str, float]] = Field(default_factory=list)
-    reporting_summary: List[Dict[str, float]] = Field(default_factory=list)
-    total_processing_time: Optional[float] = None
-    zero_time_processing_count: Optional[int] = None
-    zero_time_signatures_count: Optional[int] = None
-    zero_time_weight: Optional[float] = None
-    extra_sections: Optional[Dict[str, Any]] = None
-
-    class Config:
-        extra = "ignore"
 
 
 def extract_statistics_data(report_path: Path) -> Dict[str, Any]:

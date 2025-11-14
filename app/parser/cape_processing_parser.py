@@ -1,38 +1,11 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
 
 from app.utils.filtration_and_extraction import (
     clean_empty_values,
 )
-
-
-class FileInfo(BaseModel):
-    sha256: Optional[str] = None
-    md5: Optional[str] = None
-    cape_type: Optional[str] = None
-    type: Optional[str] = None
-    process_name: Optional[str] = None
-    process_path: Optional[str] = None
-    pid: Optional[Any] = None
-    target_process: Optional[str] = None
-    target_pid: Optional[Any] = None
-    size: Optional[int] = None
-    data: Optional[Any] = None
-    die: Optional[List[Any]] = None
-
-    class Config:
-        extra = "ignore"
-
-
-class CapePayloadSection(BaseModel):
-    payloads: List[FileInfo] = Field(default_factory=list)
-
-    class Config:
-        extra = "ignore"
 
 
 def extract_cape_data(report_path: Path) -> Dict[str, Any]:

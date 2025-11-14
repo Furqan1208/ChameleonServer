@@ -3,42 +3,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
-
 from app.utils.filtration_and_extraction import clean_empty_values
-
-
-class SignatureEntry(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    categories: Optional[List[str]] = Field(default_factory=list)
-    severity: Optional[int] = None
-    confidence: Optional[int] = None
-    families: Optional[List[str]] = Field(default_factory=list)
-    data_summary: Optional[str] = None
-    data: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
-
-    class Config:
-        extra = "ignore"
-
-
-class TTPEntry(BaseModel):
-    signature: Optional[str] = None
-    ttps: Optional[List[str]] = Field(default_factory=list)
-    mbcs: Optional[List[str]] = Field(default_factory=list)
-
-    class Config:
-        extra = "ignore"
-
-
-class DetectionSummary(BaseModel):
-    signatures: Optional[List[SignatureEntry]] = Field(default_factory=list)
-    malscore: Optional[float] = None
-    ttps: Optional[List[TTPEntry]] = Field(default_factory=list)
-    malstatus: Optional[str] = None
-
-    class Config:
-        extra = "ignore"
 
 
 def summarize_data_entries(
