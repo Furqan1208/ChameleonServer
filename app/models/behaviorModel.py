@@ -125,7 +125,7 @@ class EncryptedBufferEntry(BaseModel):
     crypt_key: Optional[str] = None
 
 
-class Behaviour(BaseModel):
+class Behavior(BaseModel):
     processes: List[Process] = Field(
         default_factory=list, description="List of processes"
     )
@@ -138,4 +138,4 @@ class Behaviour(BaseModel):
 
 # class CapeReport(BaseModel):
 #     # other top-level keys can go here, e.g. "info", "target", etc.
-#     behavior: Behaviour = Field(..., description="Behavior section of the CAPE report")
+#     behavior: Behavior = Field(..., description="Behavior section of the CAPE report")

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.models.behaviourModel import Behaviour, SummaryModel
+from app.models.behaviorModel import Behavior, SummaryModel
 
 HIGH_VALUE_CALL_CATEGORIES = {
     "process",
@@ -221,14 +221,14 @@ def parse_and_filter_report(path: str) -> Optional[Tuple[Dict[str, Any], int, in
         compact = json.dumps(behavior, separators=(",", ":"))
         original_size = len(compact.encode("utf-8"))
 
-        behaviour_obj: Behaviour = Behaviour.model_validate(behavior)
+        behavior_obj: Behavior = Behavior.model_validate(behavior)
         print("✅ Pydantic validation successful!")
 
     except Exception as e:
         print(f"❌ Pydantic Validation Failed: {e}")
         return None
 
-    filtered = behaviour_obj.model_dump(exclude_none=True, exclude_defaults=True)
+    filtered = behavior_obj.model_dump(exclude_none=True, exclude_defaults=True)
 
     processed = []
     for proc in filtered.get("processes", []):
@@ -244,8 +244,8 @@ def parse_and_filter_report(path: str) -> Optional[Tuple[Dict[str, Any], int, in
     if "processtree" in filtered:
         filtered["processtree"] = [filter_tree(n) for n in filtered["processtree"]]
 
-    if behaviour_obj.summary:
-        filtered["summary"] = filter_summary(behaviour_obj.summary)
+    if behavior_obj.summary:
+        filtered["summary"] = filter_summary(behavior_obj.summary)
 
     if filtered.get("enhanced"):
         filtered["enhanced"] = filter_enhanced_events(filtered["enhanced"])
@@ -285,7 +285,7 @@ def get_call_category_distribution(path: str) -> Dict[str, int]:
         return {}
 
     try:
-        obj = Behaviour.model_validate(behavior)
+        obj = Behavior.model_validate(behavior)
     except Exception as e:
         print(f"❌ Validation Failed: {e}")
         return {}

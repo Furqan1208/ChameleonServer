@@ -28,7 +28,7 @@ async def get_model_service():
 
 
 async def get_parser_service():
-    return ParserService(models_dir=Path("app/models"))
+    return ParserService(models_dir=Path("app/parser"))
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -169,7 +169,6 @@ async def cape_analysis_only(
         return {
             "status": "success",
             "filename": file.filename,
-            "cape_task_id": cape_report.get("task_id"),
             "report_keys": list(cape_report.keys()) if cape_report else [],
             "message": "CAPE analysis completed successfully",
         }
@@ -183,7 +182,7 @@ async def cape_analysis_only(
 
 @router.post("/parse-only")
 async def parse_existing_report(
-    report_file: UploadFile = File(...),
+    file: UploadFile = File(...),
     parser_service: ParserService = Depends(get_parser_service),
 ):
     """
@@ -191,9 +190,7 @@ async def parse_existing_report(
     Useful for testing the parser service.
     """
     try:
-        if not report_file.filename or not report_file.filename.lower().endswith(
-            ".json"
-        ):
+        if not file.filename or not file.filename.lower().endswith(".json"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only JSON files are supported",
@@ -201,10 +198,11 @@ async def parse_existing_report(
 
         # Save uploaded file temporarily
         with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
-            content = await report_file.read()
+            content = await file.read()
             temp_file.write(content)
             temp_path = Path(temp_file.name)
 
+        print(f"Parsing report file: {temp_path}")
         try:
             # Parse the report
             parsed_results = parser_service.parse_complete_report(
@@ -213,7 +211,7 @@ async def parse_existing_report(
 
             return {
                 "status": "success",
-                "original_file": report_file.filename,
+                "original_file": file.filename,
                 "sections_parsed": parsed_results["metadata"]["sections_parsed"],
                 "section_summary": get_section_summary(parsed_results),
                 "output_location": "temp_parse_output",
