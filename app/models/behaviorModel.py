@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CallArgument(BaseModel):
@@ -25,21 +25,24 @@ class CallEntry(BaseModel):
     pretty_return: Optional[str] = None
 
 
+# ------------------------
+# FIXED: Allow partial environ
+# ------------------------
 class Environ(BaseModel):
-    UserName: str
-    ComputerName: str
-    WindowsPath: str
-    TempPath: str
-    CommandLine: str
-    RegisteredOwner: str
-    RegisteredOrganization: str
-    ProductName: str
-    SystemVolumeSerialNumber: str
-    SystemVolumeGUID: str
-    MachineGUID: str
-    MainExeBase: str
-    MainExeSize: str
-    Bitness: str
+    UserName: Optional[str] = None
+    ComputerName: Optional[str] = None
+    WindowsPath: Optional[str] = None
+    TempPath: Optional[str] = None
+    CommandLine: Optional[str] = None
+    RegisteredOwner: Optional[str] = None
+    RegisteredOrganization: Optional[str] = None
+    ProductName: Optional[str] = None
+    SystemVolumeSerialNumber: Optional[str] = None
+    SystemVolumeGUID: Optional[str] = None
+    MachineGUID: Optional[str] = None
+    MainExeBase: Optional[str] = None
+    MainExeSize: Optional[str] = None
+    Bitness: Optional[str] = None
 
 
 class FileActivities(BaseModel):
@@ -49,26 +52,34 @@ class FileActivities(BaseModel):
 
 
 class Process(BaseModel):
-    process_id: int = Field(..., description="ID of the process")
-    process_name: str = Field(..., description="Name of the process")
-    parent_id: Optional[int] = Field(None, description="Parent process ID")
-    module_path: Optional[str] = Field(None, description="Path to the module")
-    first_seen: Optional[str] = Field(
-        None, description="Timestamp when the process was first seen"
-    )
-    calls: List[CallEntry] = Field(
-        default_factory=list, description="List of API calls"
-    )
-    threads: List[str] = Field(
-        default_factory=list, description="Thread IDs for this process"
-    )
-    environ: List[Environ] = Field(
-        default_factory=list, description="Environment variables / dictionary"
-    )
-    file_activities: FileActivities = Field(
-        default_factory=FileActivities,
-        description="Read / write / delete file activities",
-    )
+    process_id: int
+    process_name: str
+    parent_id: Optional[int] = None
+    module_path: Optional[str] = None
+    first_seen: Optional[str] = None
+    calls: List[CallEntry] = Field(default_factory=list)
+    threads: List[str] = Field(default_factory=list)
+
+    # FIXED: Normalize dict/list/None into List[Environ]
+    environ: List[Environ] = Field(default_factory=list)
+
+    file_activities: FileActivities = Field(default_factory=FileActivities)
+
+    @field_validator("environ", mode="before")
+    def normalize_environ(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, dict):
+            return [Environ(**v)]
+        if isinstance(v, list):
+            normalized = []
+            for item in v:
+                if isinstance(item, dict):
+                    normalized.append(Environ(**item))
+                elif isinstance(item, Environ):
+                    normalized.append(item)
+            return normalized
+        return []
 
 
 class AnomalyEntry(BaseModel):
@@ -87,6 +98,12 @@ class TreeNode(BaseModel):
     children: List["TreeNode"] = Field(default_factory=list)
     threads: Optional[List[str]] = None
     environ: Optional[Dict[str, Any]] = None
+
+    @field_validator("environ", mode="before")
+    def normalize_tree_environ(cls, v):
+        if isinstance(v, dict):
+            return v
+        return None
 
 
 TreeNode.model_rebuild()
@@ -126,16 +143,9 @@ class EncryptedBufferEntry(BaseModel):
 
 
 class Behavior(BaseModel):
-    processes: List[Process] = Field(
-        default_factory=list, description="List of processes"
-    )
+    processes: List[Process] = Field(default_factory=list)
     anomaly: List[AnomalyEntry] = Field(default_factory=list)
     processtree: List[TreeNode] = Field(default_factory=list)
     summary: Optional[SummaryModel] = None
     enhanced: List[EnhancedEvent] = Field(default_factory=list)
     encryptedbuffers: List[EncryptedBufferEntry] = Field(default_factory=list)
-
-
-# class CapeReport(BaseModel):
-#     # other top-level keys can go here, e.g. "info", "target", etc.
-#     behavior: Behavior = Field(..., description="Behavior section of the CAPE report")

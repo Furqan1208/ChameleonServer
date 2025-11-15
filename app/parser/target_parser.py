@@ -247,7 +247,7 @@ class PEStructureParser:
         )
 
 
-class FileTarget(BaseModel):
+class TargetModel(BaseModel):
     category: str = "unknown"
     file_name: Optional[str] = None
     file_path: Optional[str] = None
@@ -270,7 +270,7 @@ class FileTarget(BaseModel):
     cape_type: Optional[str] = None
 
     @classmethod
-    def from_cape_data(cls, target_data: Dict[str, Any]) -> "FileTarget":
+    def from_cape_data(cls, target_data: Dict[str, Any]) -> "TargetModel":
         file_data = target_data.get("file", {})
         pe_data = file_data.get("pe", {}) or {}
 
@@ -404,7 +404,7 @@ class CAPEReportProcessor:
 
     @staticmethod
     def clean_target_data(target_data: Dict[str, Any]) -> Dict[str, Any]:
-        model = FileTarget.from_cape_data(target_data)
+        model = TargetModel.from_cape_data(target_data)
         return model.model_dump(exclude_none=True, by_alias=True)
 
     @staticmethod

@@ -177,16 +177,3 @@ def save_cleaned_memory(cleaned_data: Dict[str, Any], output_path: Path):
     with open(output_path, "w", encoding="utf-8") as file:
         json.dump(cleaned_data, file, indent=2)
     print(f"Memory data saved to: {output_path}")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python memory_model.py <cape_report.json>")
-        sys.exit(1)
-
-    report_path = Path(sys.argv[1])
-    output_path = report_path.stem + "_memory_parsed.json"
-
-    memory_data = extract_memory_data(report_path)
-    cleaned_data = clean_memory_data(memory_data)
-    save_cleaned_memory(cleaned_data, output_path)

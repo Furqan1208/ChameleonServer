@@ -50,3 +50,6 @@ yarn-error.log*
 .coverage
 htmlcov/
 .pytest_cache/
+
+#temporary files
+temp_parse_output/

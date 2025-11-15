@@ -1,6 +1,5 @@
 import importlib.util
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -105,10 +104,10 @@ class SectionParser:
             return None
 
         try:
-            cape_data = self.model_loader.loaded_models["cape"].extract_cape_section(
+            cape_data = self.model_loader.loaded_models["cape"].extract_cape_data(
                 report_path
             )
-            cleaned = self.model_loader.loaded_models["cape"].clean_payloads(cape_data)
+            cleaned = self.model_loader.loaded_models["cape"].filter_payloads(cape_data)
             return cleaned
         except Exception as e:
             print(f"Error parsing CAPE section: {e}")
@@ -134,7 +133,7 @@ class SectionParser:
         try:
             memory_section = self.model_loader.loaded_models[
                 "memory"
-            ].extract_memory_section(report_path)
+            ].extract_memory_data(report_path)
             cleaned = self.model_loader.loaded_models["memory"].clean_memory_data(
                 memory_section
             )
@@ -150,7 +149,7 @@ class SectionParser:
         try:
             raw_sections = self.model_loader.loaded_models[
                 "signatures"
-            ].extract_detection_sections(report_path)
+            ].extract_detection_data(report_path)
             cleaned = self.model_loader.loaded_models[
                 "signatures"
             ].clean_detection_data(raw_sections)
@@ -166,7 +165,7 @@ class SectionParser:
         try:
             stat_section = self.model_loader.loaded_models[
                 "statistics"
-            ].extract_statistics_section(report_path)
+            ].extract_statistics_data(report_path)
             cleaned = self.model_loader.loaded_models["statistics"].clean_statistics(
                 stat_section
             )
@@ -180,9 +179,9 @@ class SectionParser:
             return None
 
         try:
-            results = self.model_loader.loaded_models["strings"].process_with_whitelist(
-                report_path
-            )
+            results = self.model_loader.loaded_models[
+                "strings"
+            ].process_whitelist_filtering(report_path)
             return {
                 "metadata": {
                     "strategy": "whitelist_only",
@@ -212,7 +211,7 @@ class SectionParser:
 
             target_model = self.model_loader.loaded_models[
                 "target"
-            ].TargetModel.from_dict(target_section)
+            ].TargetModel.from_cape_data(target_section)
             return target_model.model_dump(exclude_none=True)
         except Exception as e:
             print(f"Error parsing target: {e}")
@@ -367,68 +366,3 @@ class ParserService:
         self.output_manager.create_summary(results, analysis_dir)
 
         return results
-
-
-def main():
-    if len(sys.argv) < 3:
-        print(
-            "Usage: python cape_master_parser.py <models_directory> <cape_report.json> [output_directory]"  # noqa: E501
-        )
-        print("\nArguments:")
-        print("  models_directory   Directory containing all model Python files")
-        print("  cape_report.json   CAPE analysis report to parse")
-        print(
-            " output_directory  (Optional) Output directory (default: ./parsed_reports)"
-        )
-        sys.exit(1)
-
-    models_dir = Path(sys.argv[1])
-    report_path = Path(sys.argv[2])
-    output_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("./parsed_reports")
-
-    if not models_dir.exists():
-        print(f"Models directory not found: {models_dir}")
-        sys.exit(1)
-
-    if not report_path.exists():
-        print(f"CAPE report not found: {report_path}")
-        sys.exit(1)
-
-    print("CAPE Master Parser - Starting Analysis")
-    print(f"   Models Directory: {models_dir}")
-    print(f"   Input Report: {report_path}")
-    print(f"   Output Directory: {output_dir}")
-    print()
-
-    parser = ParserService(models_dir)
-
-    try:
-        results = parser.parse_complete_report(report_path, output_dir)
-
-        print("\n" + "=" * 60)
-        print("ANALYSIS COMPLETE")
-        print("=" * 60)
-        print(f"Output Location: {output_dir / report_path.stem}")
-        print(f"Sections Processed: {len(results['metadata']['sections_parsed'])}")
-        print(f"   {', '.join(results['metadata']['sections_parsed'])}")
-
-        if "signatures" in results["sections"]:
-            sigs = results["sections"]["signatures"]
-            print(
-                f"Detection: Score={sigs.get('malscore', 'N/A')}, Status={sigs.get('malstatus', 'N/A')}"  # noqa: E501
-            )
-
-        if "target" in results["sections"]:
-            target = results["sections"]["target"]
-            print(f"Target: {target.get('file_name')} ({target.get('file_type')})")
-
-    except Exception as e:
-        print(f"Error during analysis: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
