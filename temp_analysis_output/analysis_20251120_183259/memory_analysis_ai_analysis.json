@@ -1,0 +1,9 @@
+{
+  "section": "memory_analysis",
+  "ai_model": "gemini-2.5-flash",
+  "analysis": {
+    "raw_response": "```json\n{\n  \"memory_artifacts\": {\n    \"processes_analyzed\": 1,\n    \"injection_detected\": true,\n    \"suspicious_processes\": [\n      \"Gnil.exe\"\n    ]\n  },\n  \"yara_detections\": [\n    {\n      \"rule_name\": \"shellcode_get_eip\",\n      \"process\": \"Gnil.exe\",\n      \"significance\": \"High\"\n    },\n    {\n      \"rule_name\": \"INDICATOR_EXE_Packed_VMProtect\",\n      \"process\": \"Gnil.exe\",\n      \"significance\": \"Medium\"\n    },\n    {\n      \"rule_name\": \"vmdetect\",\n      \"process\": \"Gnil.exe\",\n      \"significance\": \"Medium\"\n    },\n    {\n      \"rule_name\": \"HeavensGate\",\n      \"process\": \"Gnil.exe\",\n      \"significance\": \"High\"\n    }\n  ],\n  \"runtime_indicators\": {\n    \"unpacked_payloads\": [\n      \"1b379ae1140f5141b2f0c8aa5c2c0318cb9cf72b491e62c85e5267631a086e44\",\n      \"e59c85c747e731e893256d6a44996cc3a53020083ce1a52bde1740f1846ae5ef\"\n    ],\n    \"obfuscation_techniques\": [\n      \"VMProtect Packing\"\n    ],\n    \"anti_analysis_flags\": [\n      \"Anti-VM Detection\",\n      \"HeavensGate (32-to-64 bit transition)\"\n    ]\n  }\n}\n```",
+    "parse_error": "AI response was not valid JSON"
+  },
+  "timestamp": "2025-11-20T18:34:12.013988"
+}

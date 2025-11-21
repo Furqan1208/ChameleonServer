@@ -1,0 +1,156 @@
+{
+  "section": "signatures_ttps",
+  "ai_model": "gemini-2.5-flash",
+  "analysis": {
+    "malware_assessment": {
+      "malscore": 8.0,
+      "confidence": "High",
+      "likely_family": null
+    },
+    "mitre_attck_mapping": [
+      {
+        "tactic": "Discovery",
+        "technique_id": "T1057",
+        "technique_name": "Process Discovery",
+        "evidence": "The malware enumerates running processes and expresses interest in a large number of them (observed for PIDs 5172 and 6540, including System, Registry, smss.exe, csrss.exe, wininit.exe, etc.)."
+      },
+      {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1027",
+        "technique_name": "Obfuscated Files or Information",
+        "evidence": "The binary employs obfuscation techniques through software packing, as evidenced by unknown PE section names (.nsp0, .nsp1, .nsp2, .vmp0), high entropy regions, and specific identification of NsPack and VMProtect packers."
+      },
+      {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1027.002",
+        "technique_name": "Software Packing",
+        "evidence": "The binary exhibits multiple indicators of software packing, including unknown PE section names (.nsp0, .nsp1, .nsp2, .vmp0), high entropy in sections (.nsp1, .vmp0), and specific identification as packed with NsPack and VMProtect, confirmed by YARA rules."
+      }
+    ],
+    "detection_signatures": [
+      {
+        "signature_name": "stealth_timeout",
+        "severity": "Low",
+        "description": "Possible date expiration check, exits too soon after checking local time",
+        "indicators": [
+          "Process: Gnil.exe, PID 5172",
+          "Call ID: 883"
+        ]
+      },
+      {
+        "signature_name": "enumerates_running_processes",
+        "severity": "Medium",
+        "description": "Enumerates running processes",
+        "indicators": [
+          "Process Gnil.exe (PID 5172) enumerated multiple system processes",
+          "Process spoclsv.exe (PID 6540) enumerated multiple system processes"
+        ]
+      },
+      {
+        "signature_name": "process_interest",
+        "severity": "Medium",
+        "description": "Expresses interest in specific running processes",
+        "indicators": [
+          "Process Gnil.exe (PID 5172) expressed interest in multiple processes",
+          "Process spoclsv.exe (PID 6540) expressed interest in multiple processes"
+        ]
+      },
+      {
+        "signature_name": "reads_self",
+        "severity": "Medium",
+        "description": "Reads data out of its own binary image",
+        "indicators": [
+          "Self-read by Gnil.exe (PID 5172) at offset 0x00000000, length 0x00012605"
+        ]
+      },
+      {
+        "signature_name": "terminates_remote_process",
+        "severity": "Medium",
+        "description": "Terminates another process",
+        "indicators": [
+          "Process spoclsv.exe (PID 6540) terminated another process (call ID 544)"
+        ]
+      },
+      {
+        "signature_name": "packer_unknown_pe_section_name",
+        "severity": "Medium",
+        "description": "The binary contains an unknown PE section name indicative of packing",
+        "indicators": [
+          "Unknown PE section name: .nsp0",
+          "Unknown PE section name: .nsp1",
+          "Unknown PE section name: .nsp2",
+          "Unknown PE section name: .vmp0"
+        ]
+      },
+      {
+        "signature_name": "packer_entropy",
+        "severity": "Medium",
+        "description": "The binary likely contains encrypted or compressed data",
+        "indicators": [
+          "High entropy (7.91) in .nsp1 section",
+          "High entropy (7.31) in .vmp0 section"
+        ]
+      },
+      {
+        "signature_name": "packer_nspack",
+        "severity": "Medium",
+        "description": "Executable file is packed/obfuscated with NsPack",
+        "indicators": [
+          "PE sections .nsp0, .nsp1, .nsp2 indicate NsPack"
+        ]
+      },
+      {
+        "signature_name": "packer_vmprotect",
+        "severity": "Medium",
+        "description": "The executable is likely packed with VMProtect",
+        "indicators": [
+          "PE section .vmp0 indicates VMProtect"
+        ]
+      },
+      {
+        "signature_name": "contains_pe_overlay",
+        "severity": "Medium",
+        "description": "The PE file contains an overlay",
+        "indicators": [
+          "PE overlay found at offset 0x00012600 with size 5 bytes"
+        ]
+      },
+      {
+        "signature_name": "injection_rwx",
+        "severity": "Medium",
+        "description": "Creates RWX memory",
+        "indicators": [
+          "1 API call (PID 5172) creates RWX memory"
+        ]
+      },
+      {
+        "signature_name": "binary_yara",
+        "severity": "High",
+        "description": "Binary file triggered YARA rule",
+        "indicators": [
+          "YARA rule 'INDICATOR_EXE_Packed_VMProtect' triggered on binary"
+        ]
+      },
+      {
+        "signature_name": "procmem_yara",
+        "severity": "High",
+        "description": "Yara detections observed in process dumps, payloads or dropped files",
+        "indicators": [
+          "PID 5172 triggered Yara rule 'INDICATOR_EXE_Packed_VMProtect'",
+          "PID 5172 triggered Yara rule 'shellcode_get_eip'",
+          "PID 6540 triggered Yara rule 'INDICATOR_EXE_Packed_VMProtect'"
+        ]
+      },
+      {
+        "signature_name": "static_pe_anomaly",
+        "severity": "High",
+        "description": "Anomalous binary characteristics",
+        "indicators": [
+          "Entrypoint outside mapped sections",
+          "Checksum mismatch in PE header"
+        ]
+      }
+    ]
+  },
+  "timestamp": "2025-11-20T21:05:41.948637"
+}

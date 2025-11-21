@@ -1,3 +1,4 @@
+# D:\FYP\ChameleonServer\app\services\analysis_service.py
 import asyncio
 import os
 from typing import Dict, Optional
@@ -95,6 +96,25 @@ class AnalysisService:
 
         print("Max poll attempts reached.")
         return None
+
+    async def save_progressive_analysis(self, analysis_data: Dict) -> str:
+        """Save progressive analysis results to database"""
+        try:
+            result = await self.collection.insert_one(analysis_data)
+            return str(result.inserted_id)
+        except Exception as e:
+            print(f"Error saving progressive analysis: {e}")
+            raise
+
+    async def get_analysis_by_id(self, analysis_id: str) -> Optional[Dict]:
+        """Retrieve analysis by ID"""
+        try:
+            # This would need proper ObjectId conversion in a real implementation
+            analysis = await self.collection.find_one({"analysis_id": analysis_id})
+            return analysis
+        except Exception as e:
+            print(f"Error retrieving analysis: {e}")
+            return None
 
     # async def parse_cape_report(self, report: Dict) -> Dict:
     #     """

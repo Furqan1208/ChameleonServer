@@ -1,0 +1,52 @@
+{
+  "section": "memory_analysis",
+  "ai_model": "MiniMaxAI/MiniMax-M2",
+  "analysis": {
+    "memory_artifacts": {
+      "processes_analyzed": 1,
+      "injection_detected": true,
+      "suspicious_processes": [
+        "Gnil.exe"
+      ]
+    },
+    "yara_detections": [
+      {
+        "rule_name": "shellcode_get_eip",
+        "process": "Gnil.exe",
+        "significance": "High"
+      },
+      {
+        "rule_name": "INDICATOR_EXE_Packed_VMProtect",
+        "process": "Gnil.exe",
+        "significance": "High"
+      },
+      {
+        "rule_name": "vmdetect",
+        "process": "Gnil.exe",
+        "significance": "High"
+      },
+      {
+        "rule_name": "HeavensGate",
+        "process": "Gnil.exe",
+        "significance": "High"
+      }
+    ],
+    "runtime_indicators": {
+      "unpacked_payloads": [
+        "5172_0x00400000",
+        "5172_0x6b350000",
+        "5172_0x770c0000"
+      ],
+      "obfuscation_techniques": [
+        "VMProtect packing",
+        "HeavensGate technique"
+      ],
+      "anti_analysis_flags": [
+        "Virtual machine detection",
+        "Heaven's Gate transition",
+        "Shellcode injection"
+      ]
+    }
+  },
+  "timestamp": "2025-11-20T19:11:19.452813"
+}

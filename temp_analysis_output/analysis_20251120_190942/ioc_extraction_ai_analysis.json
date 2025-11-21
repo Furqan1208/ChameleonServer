@@ -1,0 +1,5 @@
+{
+  "section": "ioc_extraction",
+  "error": "Hugging Face API call failed: (Request ID: Root=1-691f2192-77de89c57357769b169634c1;d98286d2-982c-43f8-b2f1-c9e0ad7bc81d)\n\nBad request:",
+  "timestamp": "2025-11-20T19:11:35.904664"
+}

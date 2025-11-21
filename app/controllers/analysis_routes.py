@@ -1,3 +1,4 @@
+# D:\FYP\ChameleonServer\app\controllers\analysis_routes.py
 import json
 import uuid
 from pathlib import Path
@@ -11,6 +12,7 @@ from app.database.mongodb import get_database
 from app.services.analysis_service import AnalysisService
 from app.services.model_service import ModelService
 from app.services.parser_service import ParserService
+from app.services.enhanced_analysis_service import EnhancedAnalysisService
 
 router = APIRouter(
     prefix="/analysis",
@@ -31,6 +33,13 @@ async def get_parser_service():
     return ParserService(models_dir=Path("app/parser"))
 
 
+async def get_enhanced_analysis_service(
+    model_service: ModelService = Depends(get_model_service),
+    parser_service: ParserService = Depends(get_parser_service)
+):
+    return EnhancedAnalysisService(model_service, parser_service)
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_and_analyze_file(
     file: UploadFile = File(...),
@@ -38,10 +47,11 @@ async def upload_and_analyze_file(
     analysis_service: AnalysisService = Depends(get_analysis_service),
     model_service: ModelService = Depends(get_model_service),
     parser_service: ParserService = Depends(get_parser_service),
+    enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service),
 ):
     """
     Upload a malware file to CAPEv2 server for analysis, parse the result,
-    and process with AI model.
+    and process with AI model using progressive analysis.
     """
     try:
         if not file.filename or not any(
@@ -84,32 +94,17 @@ async def upload_and_analyze_file(
                 f"✓ Report parsed successfully. Sections: {len(parsed_results['metadata']['sections_parsed'])}"
             )
 
-            # --- STEP 3: Process with AI model ---
-            print("STEP 3: Processing with AI model...")
-
-            # Prepare prompt for AI analysis
-            analysis_prompt = f"""
-            Analyze this malware analysis report and provide a comprehensive assessment:
-
-            File: {file.filename}
-            Analysis ID: {analysis_id}
-
-            Key Findings:
-
-            Please provide:
-            1. Overall threat assessment
-            2. Key indicators of compromise (IOCs)
-            3. Behavioral analysis summary
-            4. Recommended actions
-            5. Confidence level in assessment
-            """
-
-            # Use AI model to analyze the parsed results
-            ai_analysis = await model_service.process_request(
-                prompt=analysis_prompt, model_name=model_name
+            # --- STEP 3: Progressive AI Analysis ---
+            print("STEP 3: Starting progressive AI analysis...")
+            
+            # Use enhanced analysis service for progressive analysis
+            analysis_result = await enhanced_analysis_service.progressive_analysis(
+                parsed_results=parsed_results,
+                model_name=model_name,
+                output_dir=Path("temp_analysis_output") / analysis_id
             )
 
-            print("✓ AI analysis completed")
+            print("✓ Progressive AI analysis completed")
 
             # --- STEP 4: Store results in database ---
             final_result = {
@@ -117,7 +112,7 @@ async def upload_and_analyze_file(
                 "filename": file.filename,
                 "cape_report": cape_report,
                 "parsed_results": parsed_results,
-                "ai_analysis": ai_analysis,
+                "progressive_ai_analysis": analysis_result,
                 "timestamp": parsed_results["metadata"]["parsed_timestamp"],
             }
 
@@ -129,8 +124,9 @@ async def upload_and_analyze_file(
                 "filename": file.filename,
                 "status": "completed",
                 "sections_parsed": parsed_results["metadata"]["sections_parsed"],
-                "ai_model_used": ai_analysis.get("model", model_name),
-                # "summary": self._create_summary_response(parsed_results, ai_analysis),
+                "ai_analyses_performed": analysis_result["sections_analyzed"],
+                "output_directory": analysis_result["output_directory"],
+                "final_report_available": "final_synthesis" in analysis_result["results"]
             }
 
         finally:
@@ -143,6 +139,72 @@ async def upload_and_analyze_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}",
+        ) from e
+
+
+@router.post("/parse-and-analyze")
+async def parse_and_analyze_existing_report(
+    file: UploadFile = File(...),
+    model_name: Optional[str] = None,
+    parser_service: ParserService = Depends(get_parser_service),
+    enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service)
+):
+    """
+    Parse existing CAPE report and perform progressive AI analysis
+    Perfect for testing without CAPE access
+    """
+    try:
+        if not file.filename or not file.filename.lower().endswith(".json"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only JSON files are supported"
+            )
+
+        # Save uploaded file temporarily
+        with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
+
+        print(f"📄 Processing CAPE report: {file.filename}")
+        
+        try:
+            # Step 1: Parse the CAPE report using your existing parser
+            print("🔧 Step 1: Parsing CAPE report...")
+            parsed_results = parser_service.parse_complete_report(
+                temp_path, 
+                Path("temp_parse_output")
+            )
+            
+            print(f"✅ Parsing completed. Sections: {len(parsed_results['metadata']['sections_parsed'])}")
+
+            # Step 2: Progressive AI Analysis using enhanced service
+            print("🤖 Step 2: Starting progressive AI analysis...")
+            analysis_result = await enhanced_analysis_service.progressive_analysis(
+                parsed_results=parsed_results,
+                model_name=model_name
+            )
+
+            return {
+                "status": "success",
+                "analysis_id": analysis_result["analysis_id"],
+                "original_file": file.filename,
+                "parsed_sections": parsed_results["metadata"]["sections_parsed"],
+                "ai_analyses_performed": analysis_result["sections_analyzed"],
+                "output_directory": analysis_result["output_directory"],
+                "final_report_available": "final_synthesis" in analysis_result["results"]
+            }
+
+        finally:
+            # Clean up temporary file
+            temp_path.unlink(missing_ok=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Parse and analyze failed: {str(e)}"
         ) from e
 
 

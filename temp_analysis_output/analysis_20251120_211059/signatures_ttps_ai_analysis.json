@@ -1,0 +1,135 @@
+{
+  "section": "signatures_ttps",
+  "ai_model": "openai/gpt-oss-20b",
+  "analysis": {
+    "malware_assessment": {
+      "malscore": 8.0,
+      "confidence": "High",
+      "likely_family": null
+    },
+    "mitre_attck_mapping": [
+      {
+        "tactic": "Discovery",
+        "technique_id": "T1082",
+        "technique_name": "System Information Discovery",
+        "evidence": "The binary queries the keyboard layout via multiple API calls (cids 56, 222, 230, 236), indicating an attempt to discover user environment settings."
+      },
+      {
+        "tactic": "Discovery",
+        "technique_id": "T1016.004",
+        "technique_name": "System Time Zone",
+        "evidence": "The process calls locale API functions (cids 204, 247) to gather locale and time zone information, potentially for geofencing purposes."
+      },
+      {
+        "tactic": "Discovery",
+        "technique_id": "T1497.001",
+        "technique_name": "Virtualization/Sandbox Evasion",
+        "evidence": "The binary enumerates network adapters (cid 979) to detect virtual interfaces commonly present in virtual machine environments."
+      },
+      {
+        "tactic": "Execution",
+        "technique_id": "T1055",
+        "technique_name": "Process Injection",
+        "evidence": "An RWX memory region is created (cid 62) by the process, a typical sign of code injection to execute malicious payloads."
+      },
+      {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1055",
+        "technique_name": "Process Injection",
+        "evidence": "Presence of a .tls section in the binary is used for anti‑analysis; this technique is often leveraged during process injection to obscure malicious code."
+      },
+      {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1027.002",
+        "technique_name": "Obfuscated/Encrypted File or Information: Packed",
+        "evidence": "The binary contains several unknown PE sections (CODE, DATA, BSS) with normal characteristics but high entropy, indicating packing to evade static analysis."
+      },
+      {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1027",
+        "technique_name": "Obfuscated/Encrypted File or Information",
+        "evidence": "Unknown section names and mismatched checksums suggest the file is packed or otherwise obfuscated to conceal its true nature."
+      }
+    ],
+    "detection_signatures": [
+      {
+        "signature_name": "queries_keyboard_layout",
+        "severity": "Low",
+        "description": "Queries the keyboard layout",
+        "indicators": [
+          "API calls: cids [56, 222, 230, 236]"
+        ]
+      },
+      {
+        "signature_name": "queries_locale_api",
+        "severity": "Low",
+        "description": "Queries the computer locale (possible geofencing)",
+        "indicators": [
+          "API calls: cids [204, 247]"
+        ]
+      },
+      {
+        "signature_name": "antivm_network_adapters",
+        "severity": "Low",
+        "description": "Checks adapter addresses which can be used to detect virtual network interfaces",
+        "indicators": [
+          "API call: cid [979]"
+        ]
+      },
+      {
+        "signature_name": "stealth_timeout",
+        "severity": "Low",
+        "description": "Possible date expiration check, exits too soon after checking local time",
+        "indicators": [
+          "Process: NetWire.exe (PID 5456)",
+          "Call: cid 8209"
+        ]
+      },
+      {
+        "signature_name": "antianalysis_tls_section",
+        "severity": "Medium",
+        "description": "Contains .tls (Thread Local Storage) section",
+        "indicators": [
+          "Section name: .tls",
+          "Entropy: 0.00"
+        ]
+      },
+      {
+        "signature_name": "packer_unknown_pe_section_name",
+        "severity": "Medium",
+        "description": "The binary contains an unknown PE section name indicative of packing",
+        "indicators": [
+          "Section names: CODE, DATA, BSS",
+          "Entropy values: 6.55, 6.62, 0.00"
+        ]
+      },
+      {
+        "signature_name": "injection_rwx",
+        "severity": "Medium",
+        "description": "Creates RWX memory",
+        "indicators": [
+          "API call: cid [62]"
+        ]
+      },
+      {
+        "signature_name": "procmem_yara",
+        "severity": "High",
+        "description": "Yara detections observed in process dumps, payloads or dropped files",
+        "indicators": [
+          "Yara rule 'shellcode_get_eip'",
+          "Byte pattern: { E8 00 00 00 00 58 }"
+        ]
+      },
+      {
+        "signature_name": "static_pe_anomaly",
+        "severity": "High",
+        "description": "Anomalous binary characteristics",
+        "indicators": [
+          "Entrypoint outside mapped sections",
+          "Checksum mismatch in PE header"
+        ]
+      }
+    ]
+  },
+  "timestamp": "2025-11-20T21:11:35.340465"
+}

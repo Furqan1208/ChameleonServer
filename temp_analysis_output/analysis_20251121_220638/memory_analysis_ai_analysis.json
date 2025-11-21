@@ -1,0 +1,49 @@
+{
+  "section": "memory_analysis",
+  "ai_model": "gemini-2.5-pro",
+  "analysis": {
+    "memory_artifacts": {
+      "processes_analyzed": 6,
+      "injection_detected": true,
+      "suspicious_processes": [
+        "reg.exe (1712)",
+        "reg.exe (6212)",
+        "reg.exe (5132)",
+        "cmd.exe (6692)",
+        "cmd.exe (5564)",
+        "reg.exe (6208)"
+      ]
+    },
+    "yara_detections": [
+      {
+        "rule_name": "HeavensGate",
+        "process": "reg.exe (1712)",
+        "significance": "High"
+      },
+      {
+        "rule_name": "shellcode_get_eip",
+        "process": "reg.exe (1712)",
+        "significance": "High"
+      },
+      {
+        "rule_name": "vmdetect",
+        "process": "reg.exe (1712)",
+        "significance": "Medium"
+      }
+    ],
+    "runtime_indicators": {
+      "unpacked_payloads": [
+        "f11e6b201d75da767e845f83bddf87fe85a3ed5e2224c5b0e619b0a73b8099d8",
+        "c40e3c946643d1eac0e4b50074c744f5b54364896063416c66322658a0224583"
+      ],
+      "obfuscation_techniques": [
+        "Heaven's Gate (32-bit to 64-bit transition)"
+      ],
+      "anti_analysis_flags": [
+        "VM Detection (VMWARE strings)",
+        "Registry-based VM artifact checks"
+      ]
+    }
+  },
+  "timestamp": "2025-11-21T22:08:40.843747"
+}

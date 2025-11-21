@@ -1,0 +1,50 @@
+{
+  "section": "memory_analysis",
+  "ai_model": "gemini-2.5-flash",
+  "analysis": {
+    "memory_artifacts": {
+      "processes_analyzed": 1,
+      "injection_detected": true,
+      "suspicious_processes": [
+        "Gnil.exe"
+      ]
+    },
+    "yara_detections": [
+      {
+        "rule_name": "shellcode_get_eip",
+        "process": "Gnil.exe",
+        "significance": "High"
+      },
+      {
+        "rule_name": "INDICATOR_EXE_Packed_VMProtect",
+        "process": "Gnil.exe (5172_0x00400000)",
+        "significance": "Medium"
+      },
+      {
+        "rule_name": "vmdetect",
+        "process": "Gnil.exe (5172_0x6b350000)",
+        "significance": "High"
+      },
+      {
+        "rule_name": "HeavensGate",
+        "process": "Gnil.exe (5172_0x6b350000)",
+        "significance": "High"
+      }
+    ],
+    "runtime_indicators": {
+      "unpacked_payloads": [
+        "5172_0x6b350000",
+        "5172_0x770c0000"
+      ],
+      "obfuscation_techniques": [
+        "VMProtect Packing",
+        "Shellcode (Get EIP)"
+      ],
+      "anti_analysis_flags": [
+        "Anti-VM (vmdetect)",
+        "Heaven's Gate"
+      ]
+    }
+  },
+  "timestamp": "2025-11-20T21:05:55.465275"
+}
