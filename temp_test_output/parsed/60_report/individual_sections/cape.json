@@ -1,0 +1,32 @@
+{
+  "payloads": [
+    {
+      "sha256": "9f783ad9114dc462c41d35b1968a7fecedc5e00564fef8000398f918f765d67e",
+      "md5": "4486e5f4e1a48cee2592f084d9ca8b03",
+      "cape_type": "Unpacked PE Image: 32-bit executable",
+      "type": "PE32 executable (GUI) Intel 80386, for MS Windows",
+      "process_name": "spoclsv.exe",
+      "process_path": "C:\\Windows\\SysWOW64\\drivers\\spoclsv.exe",
+      "pid": 6540,
+      "size": 260608,
+      "die": [
+        "Linker: Turbo Linker(2.25*,Delphi)[GUI32]",
+        "Compiler: Borland Delphi(6-7 or 2005)[Enterprise]",
+        "Protector: VMProtect[Min protection]"
+      ]
+    },
+    {
+      "sha256": "a6cad087591fcb8cfcaffdb364a4135462490fac35c1c2962882f7cd7cba58d1",
+      "md5": "495e7c798311bffec7e9df6cd5f6b258",
+      "cape_type": "Unpacked Shellcode",
+      "type": "data",
+      "process_name": "spoclsv.exe",
+      "process_path": "C:\\Windows\\SysWOW64\\drivers\\spoclsv.exe",
+      "pid": 6540,
+      "size": 1635,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "version": "2.4-CAPE",
+  "id": 70,
+  "category": "file",
+  "package": "exe",
+  "started": "2025-09-27 21:41:14",
+  "ended": "2025-09-27 21:43:02",
+  "duration": 108,
+  "timeout": false,
+  "route": "none",
+  "CAPE_current_commit": "9686af2b991321a203131505fecf7c061da9f558",
+  "machine": {
+    "name": "cuckoo1",
+    "platform": "windows",
+    "ip": null,
+    "status": "stopping",
+    "started_on": "2025-09-27 21:41:14",
+    "shutdown_on": "2025-09-27 21:42:53"
+  }
+}

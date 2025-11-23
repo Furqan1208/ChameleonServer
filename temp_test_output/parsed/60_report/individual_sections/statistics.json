@@ -1,0 +1,35 @@
+{
+  "processing_summary": [
+    {
+      "Decompression": 0.008
+    },
+    {
+      "CAPE": 17.891
+    },
+    {
+      "AnalysisInfo": 0.026
+    },
+    {
+      "BehaviorAnalysis": 0.608
+    },
+    {
+      "Debug": 0.001
+    },
+    {
+      "Suricata": 0.001
+    },
+    {
+      "TraceeAnalysis": 0.007
+    },
+    {
+      "TLSMasterSecrets": 0.001
+    },
+    {
+      "ProcessMemory": 1.055
+    }
+  ],
+  "total_processing_time": 19.598,
+  "zero_time_processing_count": 10,
+  "zero_time_signatures_count": 688,
+  "zero_time_weight": 13679.404
+}

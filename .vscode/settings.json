@@ -5,4 +5,5 @@
   },
   "ruff.lint.enable": true,
   "ruff.lineLength": 88,
+  "postman.settings.dotenv-detection-notification-visibility": false,
 }

@@ -1,0 +1,35 @@
+CAPE REPORT ANALYSIS SUMMARY
+==================================================
+
+Original Report: 60_report.json
+Parsed Timestamp: 2025-11-23T17:19:32.170916
+Sections Parsed: target, info, behavior, signatures, memory, cape, statistics, strings
+
+TARGET ANALYSIS:
+  File: Gnil.exe
+  Size: 75269 bytes
+  SHA256: 24c0638ff7571c7f4df5bcddd50bc478195823e934481fa3ee96eb1d1c4b4a1b
+  Type: PE32 executable (GUI) Intel 80386, for MS Windows
+  Signed: False
+  YARA Hits: 1
+
+DETECTION SUMMARY:
+  MalScore: 8.0
+  MalStatus: Malicious
+  Signatures: 14
+  TTPs: 6
+
+BEHAVIOR DATA:
+  Size Reduction: 26.8%
+  Original: 590,604 bytes
+  Filtered: 432,091 bytes
+
+MEMORY ANALYSIS:
+  Processes Scanned: 1
+  Total YARA Hits: 1
+
+STRINGS ANALYSIS:
+  Total Strings: 3,536
+  Clean Strings: 545
+  Garbage Removed: 2,991
+  Reduction: 84.6%

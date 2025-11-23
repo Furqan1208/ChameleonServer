@@ -1,0 +1,29 @@
+{
+  "processing_summary": [
+    {
+      "CAPE": 6.971
+    },
+    {
+      "AnalysisInfo": 0.008
+    },
+    {
+      "BehaviorAnalysis": 3.742
+    },
+    {
+      "Debug": 0.002
+    },
+    {
+      "script_log_processing": 0.001
+    },
+    {
+      "TraceeAnalysis": 0.006
+    },
+    {
+      "ProcessMemory": 1.822
+    }
+  ],
+  "total_processing_time": 12.552,
+  "zero_time_processing_count": 12,
+  "zero_time_signatures_count": 680,
+  "zero_time_weight": 8685.984
+}

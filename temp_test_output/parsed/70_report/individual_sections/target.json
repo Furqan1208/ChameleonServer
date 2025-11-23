@@ -1,0 +1,368 @@
+{
+  "category": "file",
+  "file_name": "NetWire.exe",
+  "file_path": "/opt/CAPEv2/storage/binaries/086d35f26bd2fd886e99744960b394d94e74133c40145a3e2bc6b3877b91ec5d",
+  "file_size": 1259520,
+  "file_type": "PE32 executable (GUI) Intel 80386, for MS Windows",
+  "md5": "7621f79a7f66c25ad6c636d5248abeb9",
+  "sha1": "98304e41f82c3aee82213a286abdee9abf79bcce",
+  "sha256": "086d35f26bd2fd886e99744960b394d94e74133c40145a3e2bc6b3877b91ec5d",
+  "sha512": "59ffcf6eeac00c089e9c77192663d0dc97b2e62cedb6d64fe7dc2e67499abc34e33977e05113c9d39ca6d3e37e8b5c3e6aa926c8526215808b147c0152f7dbfd",
+  "ssdeep": "24576:nBlDgE7EmXWAqSvg439vGSVNe1/hqIiHSvd7:n7DlC+GSjiBiyF",
+  "tlsh": "T114456C32B2A1C433D5631A7CDC5B92FC9826BE10A92859877BF53D4CBF39741342A1A7",
+  "yara_hits": 0,
+  "cape_yara_hits": 0,
+  "clamav_hits": 0,
+  "pe_info": {
+    "signed": false,
+    "signing_error": "No signature found.",
+    "guest_signers": [],
+    "digital_signers": []
+  },
+  "pe_structure": {
+    "imagebase": "0x00400000",
+    "entrypoint": "0x00095c60",
+    "ep_bytes": "558bec83c4f0b8a05949...",
+    "reported_checksum": "0x00136882",
+    "actual_checksum": "0x0013f45d",
+    "osversion": "4.0",
+    "peid_signatures": [],
+    "imported_dlls": [
+      {
+        "dll": "kernel32.dll",
+        "count": 112,
+        "top_imports": [
+          "DeleteCriticalSection",
+          "LeaveCriticalSection",
+          "EnterCriticalSection",
+          "InitializeCriticalSection",
+          "VirtualFree"
+        ]
+      },
+      {
+        "dll": "user32.dll",
+        "count": 172,
+        "top_imports": [
+          "GetKeyboardType",
+          "LoadStringA",
+          "MessageBoxA",
+          "CharNextA",
+          "CreateWindowExA"
+        ]
+      },
+      {
+        "dll": "advapi32.dll",
+        "count": 10,
+        "top_imports": [
+          "RegQueryValueExA",
+          "RegOpenKeyExA",
+          "RegCloseKey",
+          "RegQueryValueExA",
+          "RegOpenKeyExA"
+        ]
+      },
+      {
+        "dll": "oleaut32.dll",
+        "count": 18,
+        "top_imports": [
+          "SysFreeString",
+          "SysReAllocStringLen",
+          "SysAllocStringLen",
+          "SafeArrayPtrOfIndex",
+          "SafeArrayPutElement"
+        ]
+      },
+      {
+        "dll": "version.dll",
+        "count": 3,
+        "top_imports": [
+          "VerQueryValueA",
+          "GetFileVersionInfoSizeA",
+          "GetFileVersionInfoA"
+        ]
+      },
+      {
+        "dll": "gdi32.dll",
+        "count": 68,
+        "top_imports": [
+          "UnrealizeObject",
+          "StretchBlt",
+          "SetWindowOrgEx",
+          "SetWinMetaFileBits",
+          "SetViewportOrgEx"
+        ]
+      },
+      {
+        "dll": "ole32.dll",
+        "count": 2,
+        "top_imports": [
+          "CoUninitialize",
+          "CoInitialize"
+        ]
+      },
+      {
+        "dll": "comctl32.dll",
+        "count": 23,
+        "top_imports": [
+          "ImageList_SetIconSize",
+          "ImageList_GetIconSize",
+          "ImageList_Write",
+          "ImageList_Read",
+          "ImageList_GetDragImage"
+        ]
+      },
+      {
+        "dll": "url.dll",
+        "count": 1,
+        "top_imports": [
+          "InetIsOffline"
+        ]
+      }
+    ],
+    "directories": [
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_EXPORT",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_IMPORT",
+        "virtual_address": "0x00102000",
+        "size": "0x0000248c"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_RESOURCE",
+        "virtual_address": "0x00112000",
+        "size": "0x00027278"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_EXCEPTION",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_SECURITY",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_BASERELOC",
+        "virtual_address": "0x00107000",
+        "size": "0x0000a3b8"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_DEBUG",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_COPYRIGHT",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_GLOBALPTR",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_TLS",
+        "virtual_address": "0x00106000",
+        "size": "0x00000018"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_IAT",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      },
+      {
+        "name": "IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR",
+        "virtual_address": "0x00000000",
+        "size": "0x00000000"
+      }
+    ],
+    "sections": [
+      {
+        "name": "CODE",
+        "virtual_address": "0x00001000",
+        "raw_address": "0x00000600",
+        "virtual_size": "0x00094cb0",
+        "raw_size": "0x00094e00",
+        "entropy": 6.55,
+        "flags": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ"
+      },
+      {
+        "name": "DATA",
+        "virtual_address": "0x00096000",
+        "raw_address": "0x00095400",
+        "virtual_size": "0x0006a398",
+        "raw_size": "0x0006a400",
+        "entropy": 6.62,
+        "flags": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE"
+      },
+      {
+        "name": "BSS",
+        "virtual_address": "0x00101000",
+        "raw_address": "0x000ff800",
+        "virtual_size": "0x00000c75",
+        "raw_size": "0x00000000",
+        "entropy": 0.0,
+        "flags": "IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE"
+      },
+      {
+        "name": ".idata",
+        "virtual_address": "0x00102000",
+        "raw_address": "0x000ff800",
+        "virtual_size": "0x0000248c",
+        "raw_size": "0x00002600",
+        "entropy": 4.91,
+        "flags": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE"
+      },
+      {
+        "name": ".tls",
+        "virtual_address": "0x00105000",
+        "raw_address": "0x00101e00",
+        "virtual_size": "0x00000010",
+        "raw_size": "0x00000000",
+        "entropy": 0.0,
+        "flags": "IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE"
+      },
+      {
+        "name": ".rdata",
+        "virtual_address": "0x00106000",
+        "raw_address": "0x00101e00",
+        "virtual_size": "0x00000018",
+        "raw_size": "0x00000200",
+        "entropy": 0.19,
+        "flags": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_SHARED|IMAGE_SCN_MEM_READ"
+      },
+      {
+        "name": ".reloc",
+        "virtual_address": "0x00107000",
+        "raw_address": "0x00102000",
+        "virtual_size": "0x0000a3b8",
+        "raw_size": "0x0000a400",
+        "entropy": 6.62,
+        "flags": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_SHARED|IMAGE_SCN_MEM_READ"
+      },
+      {
+        "name": ".rsrc",
+        "virtual_address": "0x00112000",
+        "raw_address": "0x0010c400",
+        "virtual_size": "0x00027278",
+        "raw_size": "0x00027400",
+        "entropy": 5.73,
+        "flags": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_SHARED|IMAGE_SCN_MEM_READ"
+      }
+    ],
+    "resources": [
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x00113324",
+        "size": "0x00000134",
+        "entropy": 2.66,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x00113458",
+        "size": "0x00000134",
+        "entropy": 2.8,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x0011358c",
+        "size": "0x00000134",
+        "entropy": 3.0,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x001136c0",
+        "size": "0x00000134",
+        "entropy": 2.56,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x001137f4",
+        "size": "0x00000134",
+        "entropy": 2.69,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x00113928",
+        "size": "0x00000134",
+        "entropy": 2.63,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_CURSOR",
+        "type": "RT_CURSOR",
+        "offset": "0x00113a5c",
+        "size": "0x00000134",
+        "entropy": 2.92,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_BITMAP",
+        "type": "RT_BITMAP",
+        "offset": "0x00113b90",
+        "size": "0x000001d0",
+        "entropy": 2.92,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_BITMAP",
+        "type": "RT_BITMAP",
+        "offset": "0x00113d60",
+        "size": "0x000001e4",
+        "entropy": 3.17,
+        "language": "LANG_NEUTRAL"
+      },
+      {
+        "name": "RT_BITMAP",
+        "type": "RT_BITMAP",
+        "offset": "0x00113f44",
+        "size": "0x000001d0",
+        "entropy": 2.92,
+        "language": "LANG_NEUTRAL"
+      }
+    ],
+    "imphash": "134a427d8e11e30f2e4389847cf6bf3c",
+    "timestamp": "1992-06-19 23:22:17",
+    "icon_hash": "dcc882ed87b689b5f82daa190f70dba2",
+    "icon_fuzzy": "c39aa1940d68b6701c674f010df32808",
+    "icon_dhash": "e8b0694dcde5e4f8"
+  },
+  "die_summary": [
+    "Linker: Turbo Linker(2.25*,Delphi)[GUI32]",
+    "Compiler: Borland Delphi(7)[Enterprise]",
+    "Installer: Autorun Pro Enterprise II"
+  ],
+  "cape_type_code": 0,
+  "cape_type": ""
+}

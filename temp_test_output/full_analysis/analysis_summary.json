@@ -1,0 +1,33 @@
+{
+  "analysis_id": "analysis_20251123_173711_3ac1c852",
+  "timestamp": "2025-11-23T17:41:32.004419",
+  "sections_analyzed": [
+    "initial_combined_analysis",
+    "target_analysis",
+    "memory_analysis",
+    "signatures_analysis",
+    "behavior_analysis",
+    "strings_analysis",
+    "final_synthesis"
+  ],
+  "model_usage": {
+    "gemini-2.5-flash": 4
+  },
+  "chunking_analysis": {
+    "behavior": {
+      "needs_chunking": false,
+      "process_count": 0,
+      "api_call_count": 0,
+      "estimated_chunks": 0,
+      "recommended_chunk_size": 1500
+    },
+    "strings": {
+      "needs_chunking": false,
+      "total_strings": 1023,
+      "category_count": 8,
+      "estimated_chunks": 1,
+      "recommended_chunk_size": 2000
+    }
+  },
+  "output_directory": "temp_test_output\\full_analysis"
+}

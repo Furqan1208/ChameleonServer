@@ -1,0 +1,127 @@
+{
+  "payloads": [
+    {
+      "sha256": "56de3bb70ea9862ae724b0a91cb12d8d30991960913e239b0a88233b1faa1229",
+      "md5": "f2f460919f590417a6c42dda946ce0ef",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "ASCII text, with no line terminators",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 21,
+      "data": "DeleteCriticalSection",
+      "die": [
+        "Format: plain text"
+      ]
+    },
+    {
+      "sha256": "d756a9b18820aa794c8553fb886d810c5a38b24aa1af064b6750f3902d969303",
+      "md5": "804127dc6d59f2f87c1dd6636e6f7a8b",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "data",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 144,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    },
+    {
+      "sha256": "f87cc7fc209f09dea264e16ae361e2b962478d147944832035c1d9d77ea77fca",
+      "md5": "4551fae10697918fbb31a1a1f80dd752",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "ASCII text, with no line terminators",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 20,
+      "data": "LeaveCriticalSection",
+      "die": [
+        "Format: plain text"
+      ]
+    },
+    {
+      "sha256": "610913f2fd132be01b61905c46cf6923e8862762191bc18c6608c532bb758600",
+      "md5": "d7b706601b3380b78125c35b78e990c0",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "data",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 19,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    },
+    {
+      "sha256": "f43cd00d5c273ac40276ad18f5d27e96784ecb779b7a6ed2e05212c20c5eb206",
+      "md5": "866c9b2ddb050fbdcaa6713c4246981c",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "data",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 210,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    },
+    {
+      "sha256": "e9c28b5c7648ca2b37530382da2efb4d7bee5e73ac3548781cf40560390cf8ce",
+      "md5": "0f15810d3e028edb5b3a7db316703855",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "data",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 19,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    },
+    {
+      "sha256": "aeabf6a2f684f0c2dc5a34583ad979613fc3a008de92958dec9836b5cea722ca",
+      "md5": "d58748f7940e6ddde16117ada585a659",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "ASCII text, with no line terminators",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 20,
+      "data": "EnterCriticalSection",
+      "die": [
+        "Format: plain text"
+      ]
+    },
+    {
+      "sha256": "3cfffdfb9adc40b29404b2f336b6d59ab58e0e20b53c4f6e713b2a9213f339f5",
+      "md5": "e1f3a72b220094895c3f3f6a7fd7b22c",
+      "cape_type": "Injected Shellcode/Data",
+      "type": "data",
+      "process_name": "NetWire.exe",
+      "process_path": "C:\\Users\\cape\\AppData\\Local\\Temp\\NetWire.exe",
+      "pid": 5456,
+      "target_process": "NetWire.exe",
+      "target_pid": "6308",
+      "size": 19,
+      "die": [
+        "Unknown: Unknown"
+      ]
+    }
+  ]
+}

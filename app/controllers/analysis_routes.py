@@ -10,9 +10,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.mongodb import get_database
 from app.services.analysis_service import AnalysisService
-from app.services.model_service import ModelService
+from app.services.enhanced_model_service import EnhancedModelService
 from app.services.parser_service import ParserService
+from app.services.chunking_service import ChunkingService
 from app.services.enhanced_analysis_service import EnhancedAnalysisService
+from app.services.robust_model_service import RobustModelService
 
 router = APIRouter(
     prefix="/analysis",
@@ -21,23 +23,35 @@ router = APIRouter(
 )
 
 
+# Dependency injection functions
 async def get_analysis_service(db: AsyncIOMotorDatabase = Depends(get_database)):
     return AnalysisService(db)
 
 
-async def get_model_service():
-    return ModelService()
+async def get_enhanced_model_service():
+    return EnhancedModelService()
+
+
+async def get_robust_model_service(
+    enhanced_model_service: EnhancedModelService = Depends(get_enhanced_model_service)
+):
+    return RobustModelService(enhanced_model_service)
 
 
 async def get_parser_service():
     return ParserService(models_dir=Path("app/parser"))
 
 
+async def get_chunking_service():
+    return ChunkingService()
+
+
 async def get_enhanced_analysis_service(
-    model_service: ModelService = Depends(get_model_service),
-    parser_service: ParserService = Depends(get_parser_service)
+    enhanced_model_service: EnhancedModelService = Depends(get_enhanced_model_service),
+    parser_service: ParserService = Depends(get_parser_service),
+    chunking_service: ChunkingService = Depends(get_chunking_service)
 ):
-    return EnhancedAnalysisService(model_service, parser_service)
+    return EnhancedAnalysisService(enhanced_model_service, parser_service, chunking_service)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -45,13 +59,12 @@ async def upload_and_analyze_file(
     file: UploadFile = File(...),
     model_name: Optional[str] = None,
     analysis_service: AnalysisService = Depends(get_analysis_service),
-    model_service: ModelService = Depends(get_model_service),
     parser_service: ParserService = Depends(get_parser_service),
     enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service),
 ):
     """
     Upload a malware file to CAPEv2 server for analysis, parse the result,
-    and process with AI model using progressive analysis.
+    and process with AI model using enhanced progressive analysis with chunking.
     """
     try:
         if not file.filename or not any(
@@ -65,7 +78,7 @@ async def upload_and_analyze_file(
 
         analysis_id = str(uuid.uuid4())
 
-        print(f"Starting analysis {analysis_id} for file: {file.filename}")
+        print(f"🚀 Starting enhanced analysis {analysis_id} for file: {file.filename}")
 
         print("STEP 1: Submitting file to CAPEv2...")
         cape_report = await analysis_service.upload_and_analyze(file)
@@ -77,7 +90,7 @@ async def upload_and_analyze_file(
             )
 
         print(
-            f"✓ CAPE analysis completed, task ID: {cape_report.get('task_id', 'N/A')}"
+            f"✅ CAPE analysis completed, task ID: {cape_report.get('task_id', 'N/A')}"
         )
 
         with NamedTemporaryFile(mode="w", suffix=".json", delete=False) as temp_file:
@@ -91,20 +104,20 @@ async def upload_and_analyze_file(
             )
 
             print(
-                f"✓ Report parsed successfully. Sections: {len(parsed_results['metadata']['sections_parsed'])}"
+                f"✅ Report parsed successfully. Sections: {len(parsed_results['metadata']['sections_parsed'])}"
             )
 
-            # --- STEP 3: Progressive AI Analysis ---
-            print("STEP 3: Starting progressive AI analysis...")
+            # --- STEP 3: Enhanced Progressive AI Analysis with Chunking ---
+            print("STEP 3: Starting enhanced progressive AI analysis with chunking...")
             
-            # Use enhanced analysis service for progressive analysis
+            # Use enhanced analysis service with chunking support
             analysis_result = await enhanced_analysis_service.progressive_analysis(
                 parsed_results=parsed_results,
                 model_name=model_name,
                 output_dir=Path("temp_analysis_output") / analysis_id
             )
 
-            print("✓ Progressive AI analysis completed")
+            print("✅ Enhanced progressive AI analysis completed")
 
             # --- STEP 4: Store results in database ---
             final_result = {
@@ -112,7 +125,7 @@ async def upload_and_analyze_file(
                 "filename": file.filename,
                 "cape_report": cape_report,
                 "parsed_results": parsed_results,
-                "progressive_ai_analysis": analysis_result,
+                "enhanced_ai_analysis": analysis_result,
                 "timestamp": parsed_results["metadata"]["parsed_timestamp"],
             }
 
@@ -125,6 +138,8 @@ async def upload_and_analyze_file(
                 "status": "completed",
                 "sections_parsed": parsed_results["metadata"]["sections_parsed"],
                 "ai_analyses_performed": analysis_result["sections_analyzed"],
+                "chunking_analysis": analysis_result.get("chunking_analysis", {}),
+                "model_usage": analysis_result.get("model_usage", {}),
                 "output_directory": analysis_result["output_directory"],
                 "final_report_available": "final_synthesis" in analysis_result["results"]
             }
@@ -138,7 +153,7 @@ async def upload_and_analyze_file(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Analysis failed: {str(e)}",
+            detail=f"Enhanced analysis failed: {str(e)}",
         ) from e
 
 
@@ -150,8 +165,8 @@ async def parse_and_analyze_existing_report(
     enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service)
 ):
     """
-    Parse existing CAPE report and perform progressive AI analysis
-    Perfect for testing without CAPE access
+    Parse existing CAPE report and perform enhanced progressive AI analysis
+    with chunking support. Perfect for testing without CAPE access.
     """
     try:
         if not file.filename or not file.filename.lower().endswith(".json"):
@@ -169,7 +184,7 @@ async def parse_and_analyze_existing_report(
         print(f"📄 Processing CAPE report: {file.filename}")
         
         try:
-            # Step 1: Parse the CAPE report using your existing parser
+            # Step 1: Parse the CAPE report
             print("🔧 Step 1: Parsing CAPE report...")
             parsed_results = parser_service.parse_complete_report(
                 temp_path, 
@@ -178,8 +193,8 @@ async def parse_and_analyze_existing_report(
             
             print(f"✅ Parsing completed. Sections: {len(parsed_results['metadata']['sections_parsed'])}")
 
-            # Step 2: Progressive AI Analysis using enhanced service
-            print("🤖 Step 2: Starting progressive AI analysis...")
+            # Step 2: Enhanced Progressive AI Analysis with chunking
+            print("🤖 Step 2: Starting enhanced progressive AI analysis with chunking...")
             analysis_result = await enhanced_analysis_service.progressive_analysis(
                 parsed_results=parsed_results,
                 model_name=model_name
@@ -191,6 +206,8 @@ async def parse_and_analyze_existing_report(
                 "original_file": file.filename,
                 "parsed_sections": parsed_results["metadata"]["sections_parsed"],
                 "ai_analyses_performed": analysis_result["sections_analyzed"],
+                "chunking_analysis": analysis_result.get("chunking_analysis", {}),
+                "model_usage": analysis_result.get("model_usage", {}),
                 "output_directory": analysis_result["output_directory"],
                 "final_report_available": "final_synthesis" in analysis_result["results"]
             }
@@ -205,6 +222,80 @@ async def parse_and_analyze_existing_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Parse and analyze failed: {str(e)}"
+        ) from e
+
+
+@router.post("/enhanced-ai-only")
+async def enhanced_ai_analysis_only(
+    prompt: str,
+    model_name: Optional[str] = None,
+    file: UploadFile = File(None),
+    robust_model_service: RobustModelService = Depends(get_robust_model_service),
+):
+    """
+    Use enhanced AI model service with robust fallback for analysis. 
+    Can optionally include a file for context.
+    """
+    try:
+        file_content = None
+        filename = None
+
+        if file:
+            file_content = await file.read()
+            filename = file.filename
+
+        result = await robust_model_service.process_request_with_enhanced_fallback(
+            prompt=prompt,
+            file_content=file_content,
+            filename=filename,
+            preferred_model=model_name,
+            analysis_id="direct_ai_request",
+            section_name="direct_analysis"
+        )
+
+        return {
+            "status": "success",
+            "model_used": result.get("metadata", {}).get("model_used"),
+            "reliability_score": result.get("metadata", {}).get("reliability_score"),
+            "response_time": result.get("metadata", {}).get("response_time_seconds"),
+            "quality_score": result.get("metadata", {}).get("quality_score"),
+            "total_attempts": result.get("metadata", {}).get("total_attempts"),
+            "response": result.get("response"),
+            "prompt_length": len(prompt),
+            "file_included": file is not None,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Enhanced AI analysis failed: {str(e)}",
+        ) from e
+
+
+@router.get("/model-stats")
+async def get_model_statistics(
+    robust_model_service: RobustModelService = Depends(get_robust_model_service)
+):
+    """
+    Get statistics about model performance and reliability.
+    """
+    try:
+        stats = robust_model_service.get_model_stats()
+        best_models = robust_model_service.get_best_models(5)
+        
+        return {
+            "status": "success",
+            "best_models": best_models,
+            "model_reliability": stats["model_reliability"],
+            "model_performance": stats["model_performance"],
+            "failure_summary": stats["failure_tracker_summary"],
+            "success_summary": stats["success_tracker_summary"]
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get model statistics: {str(e)}"
         ) from e
 
 
@@ -289,6 +380,54 @@ async def parse_existing_report(
         ) from e
 
 
+@router.post("/chunking-analysis")
+async def analyze_chunking_requirements(
+    file: UploadFile = File(...),
+    parser_service: ParserService = Depends(get_parser_service),
+    chunking_service: ChunkingService = Depends(get_chunking_service)
+):
+    """
+    Analyze a CAPE report to determine chunking requirements for large sections.
+    """
+    try:
+        if not file.filename or not file.filename.lower().endswith(".json"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only JSON files are supported",
+            )
+
+        # Save uploaded file temporarily
+        with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
+
+        try:
+            # Parse the report
+            parsed_results = parser_service.parse_complete_report(
+                temp_path, Path("temp_parse_output")
+            )
+
+            # Analyze chunking requirements
+            chunking_analysis = chunking_service.analyze_chunking_requirements(parsed_results)
+
+            return {
+                "status": "success",
+                "original_file": file.filename,
+                "chunking_analysis": chunking_analysis,
+                "sections_parsed": parsed_results["metadata"]["sections_parsed"],
+            }
+
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Chunking analysis failed: {str(e)}",
+        ) from e
+
+
 def get_section_summary(parsed_results):
     """
     Helper function to summarize parsed report sections.
@@ -300,45 +439,3 @@ def get_section_summary(parsed_results):
         "sections": sections,
         "parsed_timestamp": metadata.get("parsed_timestamp"),
     }
-
-
-@router.post("/ai-only")
-async def ai_analysis_only(
-    prompt: str,
-    model_name: Optional[str] = None,
-    file: UploadFile = File(None),
-    model_service: ModelService = Depends(get_model_service),
-):
-    """
-    Only use AI model for analysis. Can optionally include a file for context.
-    Useful for testing AI model integration.
-    """
-    try:
-        file_content = None
-        filename = None
-
-        if file:
-            file_content = await file.read()
-            filename = file.filename
-
-        result = await model_service.process_request(
-            prompt=prompt,
-            file_content=file_content,
-            filename=filename,
-            model_name=model_name,
-        )
-
-        return {
-            "status": "success",
-            "model_used": result.get("model"),
-            "response": result.get("response"),
-            "usage": result.get("usage", {}),
-            "prompt_length": len(prompt),
-            "file_included": file is not None,
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI analysis failed: {str(e)}",
-        ) from e

@@ -1,0 +1,3489 @@
+{
+  "signatures": [
+    {
+      "name": "stealth_timeout",
+      "description": "Possible date expiration check, exits too soon after checking local time",
+      "categories": [
+        "stealth"
+      ],
+      "severity": 1,
+      "confidence": 40,
+      "data": [
+        {
+          "process": "Gnil.exe, PID 5172"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 883
+        }
+      ]
+    },
+    {
+      "name": "enumerates_running_processes",
+      "description": "Enumerates running processes",
+      "categories": [
+        "discovery"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "process": "System with pid 4"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 430
+        },
+        {
+          "process": "Registry with pid 72"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 431
+        },
+        {
+          "process": "smss.exe with pid 340"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 432
+        },
+        {
+          "process": "csrss.exe with pid 436"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 433
+        },
+        {
+          "process": "wininit.exe with pid 504"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 434
+        },
+        {
+          "process": "csrss.exe with pid 512"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 435
+        },
+        {
+          "process": "winlogon.exe with pid 572"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 436
+        },
+        {
+          "process": "services.exe with pid 596"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 437
+        },
+        {
+          "process": "lsass.exe with pid 608"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 438
+        },
+        {
+          "process": "fontdrvhost.exe with pid 720"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 439
+        },
+        {
+          "process": "fontdrvhost.exe with pid 728"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 440
+        },
+        {
+          "process": "svchost.exe with pid 736"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 441
+        },
+        {
+          "process": "svchost.exe with pid 828"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 442
+        },
+        {
+          "process": "svchost.exe with pid 876"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 443
+        },
+        {
+          "process": "dwm.exe with pid 928"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 444
+        },
+        {
+          "process": "svchost.exe with pid 1016"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 445
+        },
+        {
+          "process": "svchost.exe with pid 324"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 446
+        },
+        {
+          "process": "svchost.exe with pid 400"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 447
+        },
+        {
+          "process": "svchost.exe with pid 352"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 448
+        },
+        {
+          "process": "svchost.exe with pid 440"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 449
+        },
+        {
+          "process": "svchost.exe with pid 424"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 450
+        },
+        {
+          "process": "svchost.exe with pid 1036"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 451
+        },
+        {
+          "process": "svchost.exe with pid 1088"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 452
+        },
+        {
+          "process": "svchost.exe with pid 1124"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 453
+        },
+        {
+          "process": "svchost.exe with pid 1176"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 454
+        },
+        {
+          "process": "svchost.exe with pid 1232"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 455
+        },
+        {
+          "process": "svchost.exe with pid 1240"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 456
+        },
+        {
+          "process": "svchost.exe with pid 1252"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 457
+        },
+        {
+          "process": "svchost.exe with pid 1324"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 458
+        },
+        {
+          "process": "svchost.exe with pid 1400"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 459
+        },
+        {
+          "process": "upfc.exe with pid 1428"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 460
+        },
+        {
+          "process": "svchost.exe with pid 1456"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 461
+        },
+        {
+          "process": "svchost.exe with pid 1480"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 462
+        },
+        {
+          "process": "svchost.exe with pid 1508"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 463
+        },
+        {
+          "process": "svchost.exe with pid 1532"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 464
+        },
+        {
+          "process": "svchost.exe with pid 1556"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 465
+        },
+        {
+          "process": "pyw.exe with pid 1564"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 466
+        },
+        {
+          "process": "Memory Compression with pid 1612"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 467
+        },
+        {
+          "process": "svchost.exe with pid 1656"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 468
+        },
+        {
+          "process": "svchost.exe with pid 1684"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 469
+        },
+        {
+          "process": "svchost.exe with pid 1692"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 470
+        },
+        {
+          "process": "svchost.exe with pid 1716"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 471
+        },
+        {
+          "process": "svchost.exe with pid 1848"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 472
+        },
+        {
+          "process": "svchost.exe with pid 1876"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 473
+        },
+        {
+          "process": "svchost.exe with pid 1952"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 474
+        },
+        {
+          "process": "svchost.exe with pid 1960"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 475
+        },
+        {
+          "process": "svchost.exe with pid 1976"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 476
+        },
+        {
+          "process": "svchost.exe with pid 1452"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 477
+        },
+        {
+          "process": "svchost.exe with pid 1928"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 478
+        },
+        {
+          "process": "spoolsv.exe with pid 2172"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 479
+        },
+        {
+          "process": "svchost.exe with pid 2192"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 480
+        },
+        {
+          "process": "svchost.exe with pid 2204"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 481
+        },
+        {
+          "process": "svchost.exe with pid 2276"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 482
+        },
+        {
+          "process": "svchost.exe with pid 2364"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 483
+        },
+        {
+          "process": "svchost.exe with pid 2372"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 484
+        },
+        {
+          "process": "svchost.exe with pid 2380"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 485
+        },
+        {
+          "process": "svchost.exe with pid 2472"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 486
+        },
+        {
+          "process": "svchost.exe with pid 2480"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 487
+        },
+        {
+          "process": "svchost.exe with pid 2488"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 488
+        },
+        {
+          "process": "svchost.exe with pid 2496"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 489
+        },
+        {
+          "process": "svchost.exe with pid 2572"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 490
+        },
+        {
+          "process": "svchost.exe with pid 2584"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 491
+        },
+        {
+          "process": "svchost.exe with pid 2596"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 492
+        },
+        {
+          "process": "svchost.exe with pid 2688"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 493
+        },
+        {
+          "process": "svchost.exe with pid 2764"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 494
+        },
+        {
+          "process": "svchost.exe with pid 3080"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 495
+        },
+        {
+          "process": "sihost.exe with pid 3176"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 496
+        },
+        {
+          "process": "svchost.exe with pid 3208"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 497
+        },
+        {
+          "process": "svchost.exe with pid 3236"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 498
+        },
+        {
+          "process": "taskhostw.exe with pid 3304"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 499
+        },
+        {
+          "process": "MicrosoftEdgeUpdate.exe with pid 3328"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 500
+        },
+        {
+          "process": "svchost.exe with pid 3368"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 501
+        },
+        {
+          "process": "svchost.exe with pid 3460"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 502
+        },
+        {
+          "process": "ctfmon.exe with pid 3508"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 503
+        },
+        {
+          "process": "svchost.exe with pid 3624"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 504
+        },
+        {
+          "process": "explorer.exe with pid 3708"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 505
+        },
+        {
+          "process": "svchost.exe with pid 3856"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 506
+        },
+        {
+          "process": "dllhost.exe with pid 4064"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 507
+        },
+        {
+          "process": "sppsvc.exe with pid 3300"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 508
+        },
+        {
+          "process": "StartMenuExperienceHost.exe with pid 3892"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 509
+        },
+        {
+          "process": "RuntimeBroker.exe with pid 4152"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 510
+        },
+        {
+          "process": "SearchApp.exe with pid 4252"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 511
+        },
+        {
+          "process": "RuntimeBroker.exe with pid 4384"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 512
+        },
+        {
+          "process": "SearchIndexer.exe with pid 4392"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 513
+        },
+        {
+          "process": "svchost.exe with pid 4404"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 514
+        },
+        {
+          "process": "SkypeBackgroundHost.exe with pid 4540"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 515
+        },
+        {
+          "process": "svchost.exe with pid 4736"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 516
+        },
+        {
+          "process": "RuntimeBroker.exe with pid 5076"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 517
+        },
+        {
+          "process": "SppExtComObj.Exe with pid 3152"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 518
+        },
+        {
+          "process": "svchost.exe with pid 4816"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 519
+        },
+        {
+          "process": "svchost.exe with pid 3944"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 520
+        },
+        {
+          "process": "svchost.exe with pid 3796"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 521
+        },
+        {
+          "process": "smartscreen.exe with pid 5296"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 522
+        },
+        {
+          "process": "SecurityHealthSystray.exe with pid 5336"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 523
+        },
+        {
+          "process": "SecurityHealthService.exe with pid 5360"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 524
+        },
+        {
+          "process": "OneDrive.exe with pid 5440"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 525
+        },
+        {
+          "process": "svchost.exe with pid 5448"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 526
+        },
+        {
+          "process": "svchost.exe with pid 5580"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 527
+        },
+        {
+          "process": "svchost.exe with pid 5624"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 528
+        },
+        {
+          "process": "OneDriveStandaloneUpdater.exe with pid 5836"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 529
+        },
+        {
+          "process": "CompatTelRunner.exe with pid 5844"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 530
+        },
+        {
+          "process": "OneDriveStandaloneUpdater.exe with pid 5888"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 531
+        },
+        {
+          "process": "TrustedInstaller.exe with pid 5992"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 532
+        },
+        {
+          "process": "TiWorker.exe with pid 6092"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 533
+        },
+        {
+          "process": "conhost.exe with pid 5228"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 534
+        },
+        {
+          "process": "svchost.exe with pid 4772"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 535
+        },
+        {
+          "process": "MoUsoCoreWorker.exe with pid 5060"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 536
+        },
+        {
+          "process": "svchost.exe with pid 6304"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 537
+        },
+        {
+          "process": "svchost.exe with pid 5272"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 538
+        },
+        {
+          "process": "Gnil.exe with pid 5172"
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 539
+        },
+        {
+          "process": "spoclsv.exe with pid 6540"
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 542
+        }
+      ]
+    },
+    {
+      "name": "process_interest",
+      "description": "Expresses interest in specific running processes",
+      "categories": [
+        "generic"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 430
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 431
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 432
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 433
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 434
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 435
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 436
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 437
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 438
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 439
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 440
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 441
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 442
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 443
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 444
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 445
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 446
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 447
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 448
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 449
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 450
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 451
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 452
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 453
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 454
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 455
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 456
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 457
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 458
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 459
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 460
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 461
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 462
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 463
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 464
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 465
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 466
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 467
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 468
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 469
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 470
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 471
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 472
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 473
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 474
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 475
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 476
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 477
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 478
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 479
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 480
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 481
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 482
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 483
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 484
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 485
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 486
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 487
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 488
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 489
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 490
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 491
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 492
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 493
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 494
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 495
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 496
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 497
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 498
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 499
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 500
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 501
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 502
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 503
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 504
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 505
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 506
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 507
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 508
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 509
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 510
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 511
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 512
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 513
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 514
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 515
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 516
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 517
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 518
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 519
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 520
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 521
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 522
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 523
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 524
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 525
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 526
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 527
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 528
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 529
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 530
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 531
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 532
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 533
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 534
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 535
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 536
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 537
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 538
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 539
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 544
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 545
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 546
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 547
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 548
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 549
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 550
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 551
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 552
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 553
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 554
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 555
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 556
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 557
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 558
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 559
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 560
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 561
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 562
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 563
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 564
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 565
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 566
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 567
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 568
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 569
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 570
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 571
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 572
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 573
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 574
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 575
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 576
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 577
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 578
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 579
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 580
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 581
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 582
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 583
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 584
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 585
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 586
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 587
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 588
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 589
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 590
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 591
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 592
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 593
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 594
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 595
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 596
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 597
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 598
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 599
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 600
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 601
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 602
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 603
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 604
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 605
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 606
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 607
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 608
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 609
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 610
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 611
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 612
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 613
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 614
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 615
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 616
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 617
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 618
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 619
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 620
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 621
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 622
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 623
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 624
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 625
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 626
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 627
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 628
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 629
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 630
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 631
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 632
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 633
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 634
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 635
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 636
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 637
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 638
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 639
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 640
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 641
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 642
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 643
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 644
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 645
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 646
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 647
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 648
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 649
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 650
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 651
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 652
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 653
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 658
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 659
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 660
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 661
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 662
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 663
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 664
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 665
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 666
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 667
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 668
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 669
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 670
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 671
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 672
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 673
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 674
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 675
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 676
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 677
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 678
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 679
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 680
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 681
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 682
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 683
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 684
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 685
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 686
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 687
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 688
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 689
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 690
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 691
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 692
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 693
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 694
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 695
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 696
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 697
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 698
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 699
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 700
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 701
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 702
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 703
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 704
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 705
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 706
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 707
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 708
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 709
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 710
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 711
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 712
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 713
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 714
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 715
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 716
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 717
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 718
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 719
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 720
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 721
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 722
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 723
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 724
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 725
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 726
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 727
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 728
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 729
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 730
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 731
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 732
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 733
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 734
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 735
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 736
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 737
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 738
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 739
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 740
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 741
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 742
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 743
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 744
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 745
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 746
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 747
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 748
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 749
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 750
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 751
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 752
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 753
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 754
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 755
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 756
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 757
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 758
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 759
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 760
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 761
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 762
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 763
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 764
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 765
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 766
+        },
+        {
+          "type": "call",
+          "pid": 5172,
+          "cid": 767
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 432
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 433
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 434
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 435
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 436
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 437
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 438
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 439
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 440
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 441
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 442
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 443
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 444
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 445
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 446
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 447
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 448
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 449
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 450
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 451
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 452
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 453
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 454
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 455
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 456
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 457
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 458
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 459
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 460
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 461
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 462
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 463
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 464
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 465
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 466
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 467
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 468
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 469
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 470
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 471
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 472
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 473
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 474
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 475
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 476
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 477
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 478
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 479
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 480
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 481
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 482
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 483
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 484
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 485
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 486
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 487
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 488
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 489
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 490
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 491
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 492
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 493
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 494
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 495
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 496
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 497
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 498
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 499
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 500
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 501
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 502
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 503
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 504
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 505
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 506
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 507
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 508
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 509
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 510
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 511
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 512
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 513
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 514
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 515
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 516
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 517
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 518
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 519
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 520
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 521
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 522
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 523
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 524
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 525
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 526
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 527
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 528
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 529
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 530
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 531
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 532
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 533
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 534
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 535
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 536
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 537
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 538
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 539
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 540
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 541
+        },
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 542
+        },
+        {
+          "process": "spoclsv.exe"
+        }
+      ]
+    },
+    {
+      "name": "reads_self",
+      "description": "Reads data out of its own binary image",
+      "categories": [
+        "generic"
+      ],
+      "severity": 2,
+      "confidence": 30,
+      "data": [
+        {
+          "self_read": "process: Gnil.exe, pid: 5172, offset: 0x00000000, length: 0x00012605"
+        }
+      ]
+    },
+    {
+      "name": "terminates_remote_process",
+      "description": "Terminates another process",
+      "categories": [
+        "persistence",
+        "stealth"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "type": "call",
+          "pid": 6540,
+          "cid": 544
+        },
+        {
+          "process": "spoclsv.exe"
+        }
+      ]
+    },
+    {
+      "name": "packer_unknown_pe_section_name",
+      "description": "The binary contains an unknown PE section name indicative of packing",
+      "categories": [
+        "packer"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "unknown section": {
+            "name": ".nsp0",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x00001000",
+            "virtual_size": "0x0002e000",
+            "size_of_data": "0x00000000",
+            "characteristics": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000040",
+            "entropy": "0.00"
+          }
+        },
+        {
+          "unknown section": {
+            "name": ".nsp1",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x0002f000",
+            "virtual_size": "0x00011000",
+            "size_of_data": "0x000102fb",
+            "characteristics": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000060",
+            "entropy": "7.91"
+          }
+        },
+        {
+          "unknown section": {
+            "name": ".nsp2",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x00040000",
+            "virtual_size": "0x00000cbf",
+            "size_of_data": "0x00000000",
+            "characteristics": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000060",
+            "entropy": "0.00"
+          }
+        },
+        {
+          "unknown section": {
+            "name": ".vmp0",
+            "raw_address": "0x00010800",
+            "virtual_address": "0x00041000",
+            "virtual_size": "0x0000182b",
+            "size_of_data": "0x00001a00",
+            "characteristics": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000040",
+            "entropy": "7.31"
+          }
+        }
+      ]
+    },
+    {
+      "name": "packer_entropy",
+      "description": "The binary likely contains encrypted or compressed data",
+      "categories": [
+        "packer"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "section": {
+            "name": ".nsp1",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x0002f000",
+            "virtual_size": "0x00011000",
+            "size_of_data": "0x000102fb",
+            "characteristics": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000060",
+            "entropy": "7.91"
+          }
+        },
+        {
+          "section": {
+            "name": ".vmp0",
+            "raw_address": "0x00010800",
+            "virtual_address": "0x00041000",
+            "virtual_size": "0x0000182b",
+            "size_of_data": "0x00001a00",
+            "characteristics": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000040",
+            "entropy": "7.31"
+          }
+        }
+      ]
+    },
+    {
+      "name": "packer_nspack",
+      "description": "Executable file is packed/obfuscated with NsPack",
+      "categories": [
+        "packer"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "section": {
+            "name": ".nsp0",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x00001000",
+            "virtual_size": "0x0002e000",
+            "size_of_data": "0x00000000",
+            "characteristics": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000040",
+            "entropy": "0.00"
+          }
+        },
+        {
+          "section": {
+            "name": ".nsp1",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x0002f000",
+            "virtual_size": "0x00011000",
+            "size_of_data": "0x000102fb",
+            "characteristics": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000060",
+            "entropy": "7.91"
+          }
+        },
+        {
+          "section": {
+            "name": ".nsp2",
+            "raw_address": "0x00000400",
+            "virtual_address": "0x00040000",
+            "virtual_size": "0x00000cbf",
+            "size_of_data": "0x00000000",
+            "characteristics": "IMAGE_SCN_CNT_CODE|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000060",
+            "entropy": "0.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "packer_vmprotect",
+      "description": "The executable is likely packed with VMProtect",
+      "categories": [
+        "packer"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "section": {
+            "name": ".vmp0",
+            "raw_address": "0x00010800",
+            "virtual_address": "0x00041000",
+            "virtual_size": "0x0000182b",
+            "size_of_data": "0x00001a00",
+            "characteristics": "IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE",
+            "characteristics_raw": "0xe0000040",
+            "entropy": "7.31"
+          }
+        }
+      ]
+    },
+    {
+      "name": "contains_pe_overlay",
+      "description": "The PE file contains an overlay",
+      "categories": [
+        "static"
+      ],
+      "severity": 2,
+      "confidence": 100,
+      "data": [
+        {
+          "overlay": "Contains overlay at offset 0x00012600 with size: 5 bytes"
+        }
+      ]
+    },
+    {
+      "name": "injection_rwx",
+      "description": "Creates RWX memory",
+      "categories": [
+        "injection"
+      ],
+      "severity": 2,
+      "confidence": 50,
+      "data_summary": "Observed 1 API calls (pid: 5172) with cids [5]."
+    },
+    {
+      "name": "binary_yara",
+      "description": "Binary file triggered YARA rule",
+      "categories": [
+        "static"
+      ],
+      "severity": 3,
+      "confidence": 80,
+      "data": [
+        {
+          "Binary triggered YARA rule": "INDICATOR_EXE_Packed_VMProtect"
+        }
+      ]
+    },
+    {
+      "name": "procmem_yara",
+      "description": "Yara detections observed in process dumps, payloads or dropped files",
+      "categories": [
+        "malware"
+      ],
+      "severity": 3,
+      "confidence": 100,
+      "data": [
+        {
+          "Hit": "PID 5172 triggered the Yara rule 'INDICATOR_EXE_Packed_VMProtect' with data '['.vmp0']'"
+        },
+        {
+          "Hit": "PID 5172 triggered the Yara rule 'shellcode_get_eip' with data '['{ E8 00 00 00 00 58 }']'"
+        },
+        {
+          "Hit": "PID 6540 triggered the Yara rule 'INDICATOR_EXE_Packed_VMProtect' with data '['.vmp0']'"
+        }
+      ]
+    },
+    {
+      "name": "static_pe_anomaly",
+      "description": "Anomalous binary characteristics",
+      "categories": [
+        "static"
+      ],
+      "severity": 3,
+      "confidence": 80,
+      "data": [
+        {
+          "anomaly": "Entrypoint of binary is located outside of any mapped sections"
+        },
+        {
+          "anomaly": "Actual checksum does not match that reported in PE header"
+        }
+      ]
+    }
+  ],
+  "malscore": 8.0,
+  "ttps": [
+    {
+      "signature": "enumerates_running_processes",
+      "ttps": [
+        "T1057"
+      ],
+      "mbcs": [
+        "OB0007"
+      ]
+    },
+    {
+      "signature": "process_interest",
+      "ttps": [
+        "T1057"
+      ],
+      "mbcs": [
+        "OB0007"
+      ]
+    },
+    {
+      "signature": "packer_unknown_pe_section_name",
+      "ttps": [
+        "T1027.002",
+        "T1027"
+      ],
+      "mbcs": [
+        "OB0001",
+        "OB0002",
+        "OB0006",
+        "F0001"
+      ]
+    },
+    {
+      "signature": "packer_entropy",
+      "ttps": [
+        "T1027.002",
+        "T1027"
+      ],
+      "mbcs": [
+        "OB0001",
+        "OB0002",
+        "OB0006",
+        "F0001"
+      ]
+    },
+    {
+      "signature": "packer_nspack",
+      "ttps": [
+        "T1027.002",
+        "T1027"
+      ],
+      "mbcs": [
+        "OB0001",
+        "OB0002",
+        "OB0006",
+        "F0001"
+      ]
+    },
+    {
+      "signature": "packer_vmprotect",
+      "ttps": [
+        "T1027.002",
+        "T1027"
+      ],
+      "mbcs": [
+        "OB0001",
+        "OB0002",
+        "OB0006",
+        "F0001",
+        "F0001.010"
+      ]
+    }
+  ],
+  "malstatus": "Malicious"
+}
