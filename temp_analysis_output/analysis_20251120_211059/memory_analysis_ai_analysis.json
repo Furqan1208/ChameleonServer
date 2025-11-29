@@ -1,5 +1,0 @@
-{
-  "section": "memory_analysis",
-  "error": "Hugging Face API call failed: Client error '402 Payment Required' for url 'https://router.huggingface.co/v1/chat/completions' (Request ID: Root=1-691f3dbc-5b6349f473cf38477bf78414;3b1f7268-7d03-4cf9-8c06-8f0bf7ec8bc1)\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402\n\nYou have exceeded your monthly included credits for Inference Providers. Subscribe to PRO to get 20x more monthly included credits.",
-  "timestamp": "2025-11-20T21:11:40.659296"
-}

@@ -1,5 +1,0 @@
-{
-  "section": "behavioral_analysis",
-  "error": "Hugging Face API call failed: Client error '413 Payload Too Large' for url 'https://router.huggingface.co/v1/chat/completions' (Request ID: Root=1-691f3dac-0b112c8a72362e5e342ce3f4;a71d322c-8c07-4b85-aab5-5a3a6cd1634b)\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/413\n\nrequest entity too large",
-  "timestamp": "2025-11-20T21:11:30.213131"
-}
