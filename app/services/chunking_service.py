@@ -9,56 +9,75 @@ class ChunkingService:
     """
     Service for chunking large analysis sections (behavior, strings) 
     into manageable pieces for AI processing.
+    HANDLES: Parser output structure with metadata
     """
     
     def __init__(self):
-        # Configuration for different section types
+        # Configuration for different section types - OPTIMIZED FOR REAL DATA
         self.chunk_config = {
             "behavior": {
-                "chunk_size": 1500,  # lines or processes per chunk
-                "chunk_by": "processes",  # chunk by processes or lines
-                "max_tokens_estimate": 8000,  # estimated tokens per chunk
+                "chunk_size": 3,  # processes per chunk - optimized for real behavior data
+                "chunk_by": "processes",  
+                "max_tokens_estimate": 8000,
             },
             "strings": {
-                "chunk_size": 2000,  # strings per chunk
-                "chunk_by": "strings",  # chunk by string count
+                "chunk_size": 2000,  # strings per chunk - optimized for real strings data
+                "chunk_by": "strings",  
                 "max_tokens_estimate": 6000,
             },
             "memory": {
-                "chunk_size": 500,  # memory entries per chunk
+                "chunk_size": 10,   # entries per chunk - optimized for real memory data
                 "chunk_by": "entries",
                 "max_tokens_estimate": 4000,
             }
         }
         
-        # Token estimation factors (approximate)
+        # Token estimation factors (optimized for production)
         self.token_estimates = {
-            "behavior_process": 50,  # tokens per process
-            "behavior_api_call": 10,  # tokens per API call
-            "string_item": 3,        # tokens per string
-            "memory_entry": 20,      # tokens per memory entry
+            "behavior_process": 120,   # processes are complex with API calls
+            "behavior_api_call": 8,    # individual API calls are simpler
+            "string_item": 3,        
+            "memory_entry": 80,       # memory entries are complex with YARA, regions, etc.
         }
 
     def chunk_behavior_data(self, behavior_data: Dict[str, Any], chunk_size: int = None) -> List[Dict[str, Any]]:
         """
         Chunk behavior data by processes, ensuring each chunk is manageable for AI models.
-        
-        Args:
-            behavior_data: The parsed behavior section data
-            chunk_size: Optional custom chunk size (uses config if None)
-            
-        Returns:
-            List of behavior chunks with metadata
+        HANDLES: Both raw behavior data AND behavior parser output structure
         """
-        if not behavior_data or "processes" not in behavior_data:
-            return [{"data": behavior_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "processes_in_chunk": 0}}]
+        # Handle behavior parser output structure - EXTRACT ACTUAL DATA
+        actual_behavior_data = self._extract_behavior_data(behavior_data)
+        
+        if not actual_behavior_data or "processes" not in actual_behavior_data:
+            # Return empty chunk structure for consistency
+            return [{
+                "data": actual_behavior_data or {}, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "processes_in_chunk": 0,
+                    "api_calls_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": self.chunk_config["behavior"]["chunk_size"]
+                }
+            }]
         
         config = self.chunk_config["behavior"]
         chunk_size = chunk_size or config["chunk_size"]
-        processes = behavior_data.get("processes", [])
+        processes = actual_behavior_data.get("processes", [])
         
         if not processes:
-            return [{"data": behavior_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "processes_in_chunk": 0}}]
+            return [{
+                "data": actual_behavior_data, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "processes_in_chunk": 0,
+                    "api_calls_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": chunk_size
+                }
+            }]
         
         # Calculate total chunks needed
         total_chunks = math.ceil(len(processes) / chunk_size)
@@ -71,13 +90,18 @@ class ChunkingService:
             # Create chunk data
             chunk_processes = processes[start_idx:end_idx]
             
+            # Count API calls in this chunk
+            api_calls_in_chunk = sum(len(proc.get("calls", [])) for proc in chunk_processes)
+            
             # Build chunk with original structure but only chunked processes
             chunk_data = {
                 "processes": chunk_processes,
                 # Include summary and other metadata for context
-                "summary": behavior_data.get("summary"),
-                "anomaly": behavior_data.get("anomaly", []),
-                "processtree": self._get_relevant_processtree(behavior_data.get("processtree", []), chunk_processes),
+                "summary": actual_behavior_data.get("summary"),
+                "anomaly": actual_behavior_data.get("anomaly", []),
+                "processtree": self._get_relevant_processtree(actual_behavior_data.get("processtree", []), chunk_processes),
+                "enhanced": actual_behavior_data.get("enhanced", []),
+                "encryptedbuffers": actual_behavior_data.get("encryptedbuffers", [])
             }
             
             # Estimate token count for this chunk
@@ -87,7 +111,7 @@ class ChunkingService:
                 "current_chunk": chunk_idx + 1,
                 "total_chunks": total_chunks,
                 "processes_in_chunk": len(chunk_processes),
-                "api_calls_in_chunk": sum(len(proc.get("calls", [])) for proc in chunk_processes),
+                "api_calls_in_chunk": api_calls_in_chunk,
                 "estimated_tokens": estimated_tokens,
                 "chunk_size_config": chunk_size,
             }
@@ -102,29 +126,44 @@ class ChunkingService:
     def chunk_strings_data(self, strings_data: Dict[str, Any], chunk_size: int = None) -> List[Dict[str, Any]]:
         """
         Chunk strings data by categories and string count.
-        
-        Args:
-            strings_data: The parsed strings section data
-            chunk_size: Optional custom chunk size
-            
-        Returns:
-            List of strings chunks with metadata
+        HANDLES: Strings parser output structure
         """
-        if not strings_data:
-            return [{"data": strings_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "strings_in_chunk": 0}}]
+        # Handle strings parser output structure
+        actual_strings_data = self._extract_strings_data(strings_data)
+        
+        if not actual_strings_data:
+            return [{
+                "data": actual_strings_data or {}, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "strings_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": self.chunk_config["strings"]["chunk_size"]
+                }
+            }]
         
         config = self.chunk_config["strings"]
         chunk_size = chunk_size or config["chunk_size"]
         
         # Extract all strings from categories
-        categories = strings_data.get("categories", {})
+        categories = actual_strings_data.get("categories", {})
         all_strings = []
         
         for category, strings in categories.items():
             all_strings.extend([(category, s) for s in strings])
         
         if not all_strings:
-            return [{"data": strings_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "strings_in_chunk": 0}}]
+            return [{
+                "data": actual_strings_data, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "strings_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": chunk_size
+                }
+            }]
         
         total_chunks = math.ceil(len(all_strings) / chunk_size)
         chunks = []
@@ -144,7 +183,7 @@ class ChunkingService:
             # Build chunk data
             chunk_data = {
                 "categories": chunk_categories,
-                "metadata": strings_data.get("metadata", {})
+                "metadata": actual_strings_data.get("metadata", {})
             }
             
             # Estimate token count
@@ -169,23 +208,38 @@ class ChunkingService:
     def chunk_memory_data(self, memory_data: Dict[str, Any], chunk_size: int = None) -> List[Dict[str, Any]]:
         """
         Chunk memory data by process entries.
-        
-        Args:
-            memory_data: The parsed memory section data
-            chunk_size: Optional custom chunk size
-            
-        Returns:
-            List of memory chunks with metadata
+        HANDLES: Memory parser output structure
         """
-        if not memory_data or "procmemory" not in memory_data:
-            return [{"data": memory_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "entries_in_chunk": 0}}]
+        # Handle memory parser output structure
+        actual_memory_data = self._extract_memory_data(memory_data)
+            
+        if not actual_memory_data or "procmemory" not in actual_memory_data:
+            return [{
+                "data": actual_memory_data or {}, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "entries_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": self.chunk_config["memory"]["chunk_size"]
+                }
+            }]
         
         config = self.chunk_config["memory"]
         chunk_size = chunk_size or config["chunk_size"]
-        procmemory = memory_data.get("procmemory", [])
+        procmemory = actual_memory_data.get("procmemory", [])
         
         if not procmemory:
-            return [{"data": memory_data, "chunk_info": {"current_chunk": 1, "total_chunks": 1, "entries_in_chunk": 0}}]
+            return [{
+                "data": actual_memory_data, 
+                "chunk_info": {
+                    "current_chunk": 1, 
+                    "total_chunks": 1, 
+                    "entries_in_chunk": 0,
+                    "estimated_tokens": 0,
+                    "chunk_size_config": chunk_size
+                }
+            }]
         
         total_chunks = math.ceil(len(procmemory) / chunk_size)
         chunks = []
@@ -198,7 +252,7 @@ class ChunkingService:
             
             chunk_data = {
                 "procmemory": chunk_entries,
-                "metadata": memory_data.get("metadata", {})
+                "metadata": actual_memory_data.get("metadata", {})
             }
             
             # Estimate token count
@@ -218,6 +272,40 @@ class ChunkingService:
             })
         
         return chunks
+
+    def _extract_behavior_data(self, behavior_data: Any) -> Dict[str, Any]:
+        """
+        Extract actual behavior data from parser output.
+        HANDLES: Your behavior parser returns {"data": actual_data, "size_metrics": metadata}
+        """
+        if isinstance(behavior_data, dict):
+            if "data" in behavior_data:
+                # This is from behavior parser - return the actual data
+                return behavior_data["data"]
+            elif "processes" in behavior_data:
+                # This is already the actual behavior data
+                return behavior_data
+        return behavior_data or {}
+
+    def _extract_strings_data(self, strings_data: Any) -> Dict[str, Any]:
+        """
+        Extract actual strings data from parser output.
+        """
+        if isinstance(strings_data, dict):
+            if "categories" in strings_data:
+                # This is the actual strings data structure
+                return strings_data
+        return strings_data or {}
+
+    def _extract_memory_data(self, memory_data: Any) -> Dict[str, Any]:
+        """
+        Extract actual memory data from parser output.
+        """
+        if isinstance(memory_data, dict):
+            if "procmemory" in memory_data:
+                # This is the actual memory data structure
+                return memory_data
+        return memory_data or {}
 
     def _get_relevant_processtree(self, processtree: List[Dict], chunk_processes: List[Dict]) -> List[Dict]:
         """
@@ -254,10 +342,16 @@ class ChunkingService:
             estimated_tokens += len(process.get("calls", [])) * self.token_estimates["behavior_api_call"]
         
         # Anomalies
-        estimated_tokens += len(behavior_chunk.get("anomaly", [])) * 20
+        estimated_tokens += len(behavior_chunk.get("anomaly", [])) * 25
         
         # Processtree
-        estimated_tokens += len(behavior_chunk.get("processtree", [])) * 30
+        estimated_tokens += len(behavior_chunk.get("processtree", [])) * 40
+        
+        # Enhanced events
+        estimated_tokens += len(behavior_chunk.get("enhanced", [])) * 30
+        
+        # Encrypted buffers
+        estimated_tokens += len(behavior_chunk.get("encryptedbuffers", [])) * 20
         
         return estimated_tokens
 
@@ -277,24 +371,17 @@ class ChunkingService:
         for entry in memory_chunk.get("procmemory", []):
             estimated_tokens += self.token_estimates["memory_entry"]
             # YARA rules
-            estimated_tokens += len(entry.get("yara", [])) * 15
-            estimated_tokens += len(entry.get("cape_yara", [])) * 15
+            estimated_tokens += len(entry.get("yara", [])) * 20
+            estimated_tokens += len(entry.get("cape_yara", [])) * 20
+            # Address space
+            estimated_tokens += len(entry.get("address_space", [])) * 15
         
         return estimated_tokens
-
-    def get_section_chunking_config(self, section_name: str) -> Dict[str, Any]:
-        """Get chunking configuration for a specific section"""
-        return self.chunk_config.get(section_name, {"chunk_size": 1000, "chunk_by": "items"})
-
-    def update_chunk_size(self, section_name: str, new_size: int):
-        """Update chunk size for a specific section"""
-        if section_name in self.chunk_config:
-            self.chunk_config[section_name]["chunk_size"] = new_size
 
     def analyze_chunking_requirements(self, parsed_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze parsed results to determine chunking requirements for each section.
-        Useful for adaptive chunking based on actual data size.
+        HANDLES: Both raw data and parser output structures
         """
         analysis = {}
         
@@ -303,9 +390,12 @@ class ChunkingService:
                 config = self.chunk_config[section_name]
                 
                 if section_name == "behavior":
-                    process_count = len(section_data.get("processes", []))
-                    api_call_count = sum(len(proc.get("calls", [])) for proc in section_data.get("processes", []))
-                    chunks_needed = math.ceil(process_count / config["chunk_size"])
+                    # Extract actual behavior data
+                    actual_data = self._extract_behavior_data(section_data)
+                    
+                    process_count = len(actual_data.get("processes", []))
+                    api_call_count = sum(len(proc.get("calls", [])) for proc in actual_data.get("processes", []))
+                    chunks_needed = math.ceil(process_count / config["chunk_size"]) if process_count > 0 else 1
                     
                     analysis[section_name] = {
                         "needs_chunking": process_count > config["chunk_size"],
@@ -316,13 +406,30 @@ class ChunkingService:
                     }
                 
                 elif section_name == "strings":
-                    total_strings = sum(len(strings) for strings in section_data.get("categories", {}).values())
-                    chunks_needed = math.ceil(total_strings / config["chunk_size"])
+                    # Extract actual strings data
+                    actual_data = self._extract_strings_data(section_data)
+                    
+                    total_strings = sum(len(strings) for strings in actual_data.get("categories", {}).values())
+                    chunks_needed = math.ceil(total_strings / config["chunk_size"]) if total_strings > 0 else 1
                     
                     analysis[section_name] = {
                         "needs_chunking": total_strings > config["chunk_size"],
                         "total_strings": total_strings,
-                        "category_count": len(section_data.get("categories", {})),
+                        "category_count": len(actual_data.get("categories", {})),
+                        "estimated_chunks": chunks_needed,
+                        "recommended_chunk_size": config["chunk_size"]
+                    }
+                
+                elif section_name == "memory":
+                    # Extract actual memory data
+                    actual_data = self._extract_memory_data(section_data)
+                    
+                    entry_count = len(actual_data.get("procmemory", []))
+                    chunks_needed = math.ceil(entry_count / config["chunk_size"]) if entry_count > 0 else 1
+                    
+                    analysis[section_name] = {
+                        "needs_chunking": entry_count > config["chunk_size"],
+                        "entry_count": entry_count,
                         "estimated_chunks": chunks_needed,
                         "recommended_chunk_size": config["chunk_size"]
                     }

@@ -73,7 +73,7 @@ class EnhancedAnalysisService:
             },
             {
                 "section": "final_synthesis",
-                "prompt_file": "final_synthesis_prompt.txt",  # You might want to create this
+                "prompt_file": "final_synthesis_prompt.txt",
                 "input_sections": ["all_ai_analyses"],
                 "requires_previous": True,
                 "chunkable": False,
@@ -82,40 +82,162 @@ class EnhancedAnalysisService:
         ]
 
     def extract_json_from_response(self, ai_response: str) -> Any:
-        """Extract JSON from AI response, handling markdown code blocks"""
+        """
+        Enhanced JSON extraction with robust markdown and malformed JSON handling.
+        Specifically designed to handle the behavior analysis JSON-in-markdown responses.
+        """
         if not ai_response:
             return {"error": "Empty response from AI"}
         
         cleaned_response = ai_response.strip()
         
-        # Try direct JSON parsing first
+        # Try direct JSON parsing first (for properly formatted responses)
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
             pass
         
-        # Try to extract JSON from markdown code blocks
+        # Enhanced markdown code block extraction with multiple strategies
         json_patterns = [
-            r'```json\s*(.*?)\s*```',
-            r'```\s*(.*?)\s*```',
-            r'\{.*\}',
+            # Strategy 1: Complete JSON in markdown code blocks
+            r'```json\s*(\{.*\})\s*```',
+            r'```\s*(\{.*\})\s*```',
+            
+            # Strategy 2: JSON that might be truncated or malformed in markdown
+            r'```json\s*(\{[\s\S]*?)\s*```',
+            r'```\s*(\{[\s\S]*?)\s*```',
+            
+            # Strategy 3: Look for JSON object patterns (more flexible)
+            r'(\{\s*"[^"]*"\s*:\s*[^}]*\})',
+            
+            # Strategy 4: Handle responses that start with JSON but have extra text
+            r'^(\{[\s\S]*?\})(?:\n|$)',
         ]
         
         for pattern in json_patterns:
-            matches = re.findall(pattern, cleaned_response, re.DOTALL)
+            matches = re.findall(pattern, cleaned_response, re.DOTALL | re.MULTILINE)
             for match in matches:
+                if not match:
+                    continue
+                    
                 try:
-                    return json.loads(match.strip())
-                except json.JSONDecodeError:
+                    # Clean up the match
+                    json_text = match.strip()
+                    
+                    # Handle common formatting issues
+                    json_text = re.sub(r',\s*}', '}', json_text)  # Remove trailing commas
+                    json_text = re.sub(r',\s*]', ']', json_text)  # Remove trailing commas in arrays
+                    
+                    # Balance braces if response was truncated
+                    open_braces = json_text.count('{')
+                    close_braces = json_text.count('}')
+                    
+                    if open_braces > close_braces:
+                        json_text += '}' * (open_braces - close_braces)
+                    
+                    # Try to parse
+                    parsed = json.loads(json_text)
+                    print(f"✅ Successfully extracted JSON using pattern: {pattern[:50]}...")
+                    return parsed
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON extraction failed for pattern {pattern[:50]}: {str(e)[:100]}...")
                     continue
         
-        if cleaned_response:
+        # Strategy 5: If we have a substantial response that looks like analysis text
+        # but couldn't be parsed as JSON, return it as structured text analysis
+        if len(cleaned_response) > 300:
+            print("⚠️  Falling back to text analysis for substantial response")
+            
+            # Try to extract key sections from the text response
+            analysis_structure = self._structure_text_response(cleaned_response)
+            
+            if analysis_structure:
+                return analysis_structure
+            
+            # Return as analysis text with parse warning
             return {
                 "analysis_text": cleaned_response,
-                "parse_warning": "AI response was not in expected JSON format"
+                "parse_warning": "AI response was not in expected JSON format but contains substantial analysis content",
+                "response_length": len(cleaned_response),
+                "sections_found": self._detect_sections_in_text(cleaned_response)
             }
         
-        return {"error": "No valid response from AI"}
+        # Final fallback
+        return {
+            "error": "No valid JSON response from AI",
+            "raw_response_preview": cleaned_response[:500] if cleaned_response else "Empty",
+            "response_length": len(cleaned_response)
+        }
+
+    def _structure_text_response(self, text_response: str) -> Optional[Dict[str, Any]]:
+        """
+        Attempt to structure a text response into a semi-structured format.
+        This is a fallback when JSON parsing fails but we have good analysis content.
+        """
+        try:
+            # Look for common section patterns in behavior analysis
+            sections = {}
+            
+            # Extract executive summary if present
+            exec_match = re.search(r'(?:executive summary|overview|summary)[:\s]*([^\n].*?)(?=\n\n|\n[A-Z]|\Z)', 
+                                 text_response, re.IGNORECASE | re.DOTALL)
+            if exec_match:
+                sections["executive_summary"] = {
+                    "overview": exec_match.group(1).strip(),
+                    "extracted_from_text": True
+                }
+            
+            # Extract key behaviors
+            behaviors_match = re.search(r'(?:key behaviors|key findings|behaviors)[:\s]*([^\n].*?)(?=\n\n|\n[A-Z]|\Z)', 
+                                      text_response, re.IGNORECASE | re.DOTALL)
+            if behaviors_match:
+                behaviors_text = behaviors_match.group(1)
+                # Try to extract bullet points or list items
+                behaviors_list = re.findall(r'[•\-*]\s*([^\n]+)', behaviors_text)
+                if behaviors_list:
+                    sections["key_behaviors"] = behaviors_list
+                else:
+                    sections["key_behaviors"] = [behaviors_text.strip()]
+            
+            # Extract threat level
+            threat_match = re.search(r'(?:threat level|threat activity level|risk level)[:\s]*([^\n]+)', 
+                                   text_response, re.IGNORECASE)
+            if threat_match:
+                sections["threat_assessment"] = {
+                    "level": threat_match.group(1).strip(),
+                    "extracted_from_text": True
+                }
+            
+            if sections:
+                return {
+                    **sections,
+                    "structured_from_text": True,
+                    "original_response_preview": text_response[:1000] + "..." if len(text_response) > 1000 else text_response
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error structuring text response: {e}")
+            return None
+
+    def _detect_sections_in_text(self, text: str) -> List[str]:
+        """Detect what sections are present in a text response"""
+        sections_found = []
+        section_keywords = {
+            "executive_summary": ["executive", "summary", "overview"],
+            "technical_analysis": ["technical", "analysis", "process", "api", "calls"],
+            "mitre_attack": ["mitre", "attack", "technique", "tactics"],
+            "recommendations": ["recommend", "suggest", "action", "response"]
+        }
+        
+        lower_text = text.lower()
+        for section, keywords in section_keywords.items():
+            if any(keyword in lower_text for keyword in keywords):
+                sections_found.append(section)
+        
+        return sections_found
 
     async def load_prompt(self, prompt_file: str) -> str:
         """Load prompt template from file"""

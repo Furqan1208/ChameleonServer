@@ -85,17 +85,21 @@ async def test_full_progressive_analysis(analysis_service, parsed_results, model
     """Test full progressive analysis with all sections"""
     print("\n🚀 Starting FULL progressive analysis...")
     print("This will analyze all sections with chunking and may take several minutes.")
-    
+
     confirm = input("Continue? (y/N): ").strip().lower()
     if confirm != 'y':
         print("❌ Test cancelled")
         return None
-    
+
     try:
+        # --- REPORT-SPECIFIC OUTPUT DIRECTORY (NEW) ---
+        report_name = parsed_results["metadata"]["original_report"].replace(".json", "")
+        output_path = Path("temp_test_output") / "ai_analysis" / f"{report_name}_report"
+
         result = await analysis_service.progressive_analysis(
             parsed_results=parsed_results,
             model_name=model_name,
-            output_dir=Path("temp_test_output") / "full_analysis"
+            output_dir=output_path
         )
         
         print(f"✅ Full analysis completed!")
@@ -140,7 +144,7 @@ async def test_specific_section(analysis_service, parsed_results, model_name):
                 selected_section = sections[choice_num - 1]
                 break
             else:
-                print(f"❌ Please enter a number between 1 and {len(sections)}")
+                print(f"❌ Please enter a number between {1} and {len(sections)}")
                 
         except ValueError:
             print("❌ Please enter a valid number")
@@ -149,7 +153,6 @@ async def test_specific_section(analysis_service, parsed_results, model_name):
     
     print(f"🔍 Testing section: {selected_section}")
     
-    # Find the section config
     section_config = None
     for config in analysis_service.analysis_plan:
         if config["section"] == selected_section:
@@ -159,6 +162,11 @@ async def test_specific_section(analysis_service, parsed_results, model_name):
     if not section_config:
         print(f"❌ Section config not found for: {selected_section}")
         return None
+
+    # --- REPORT-SPECIFIC OUTPUT DIRECTORY (NEW) ---
+    report_name = parsed_results["metadata"]["original_report"].replace(".json", "")
+    section_output_dir = Path("temp_test_output") / "ai_analysis" / f"{report_name}_report" / "individual_sections"
+    section_output_dir.mkdir(parents=True, exist_ok=True)
     
     try:
         result = await analysis_service.analyze_section_with_fallback(
@@ -166,7 +174,8 @@ async def test_specific_section(analysis_service, parsed_results, model_name):
             parsed_results=parsed_results,
             previous_analyses={},
             model_name=model_name,
-            analysis_id=f"test_section_{selected_section}"
+            analysis_id=f"test_section_{selected_section}",
+            output_dir=section_output_dir
         )
         
         print(f"✅ Section analysis completed!")
@@ -190,7 +199,6 @@ async def test_chunking_service(chunking_service, parsed_results):
     """Test the chunking service only"""
     print("\n📦 Testing Chunking Service...")
     
-    # Analyze chunking requirements
     chunking_analysis = chunking_service.analyze_chunking_requirements(parsed_results)
     print("📊 Chunking Requirements Analysis:")
     for section, analysis in chunking_analysis.items():
@@ -202,7 +210,6 @@ async def test_chunking_service(chunking_service, parsed_results):
         if 'total_strings' in analysis:
             print(f"     - Strings: {analysis['total_strings']}")
     
-    # Test actual chunking
     print("\n🔍 Testing actual chunking...")
     
     if "behavior" in parsed_results["sections"]:
@@ -242,23 +249,19 @@ async def test_model_service(model_service):
         for model in models_to_test:
             try:
                 print(f"   Trying {model}...")
-                result = await model_service.process_request(
-                    prompt=prompt,
-                    model_name=model
-                )
+                result = await model_service.process_request(prompt=prompt, model_name=model)
                 response = result.get("response", "No response").strip()
                 print(f"   ✅ {model}: {response[:100]}{'...' if len(response) > 100 else ''}")
-                break  # Move to next prompt if one model works
+                break
             except Exception as e:
                 print(f"   ❌ {model}: {str(e)[:100]}...")
                 continue
     
-    # Test fallback mechanism
     print(f"\n🔄 Testing fallback mechanism...")
     try:
         result = await model_service.process_request_with_fallback(
             prompt="This is a fallback test. Respond with 'FALLBACK SUCCESSFUL'.",
-            preferred_model="invalid-model"  # This should trigger fallback
+            preferred_model="invalid-model"
         )
         print(f"✅ Fallback test successful with: {result.get('model', 'unknown')}")
     except Exception as e:
@@ -268,9 +271,12 @@ async def test_model_service(model_service):
 async def quick_integration_test(analysis_service, parsed_results, model_name):
     """Quick integration test of all services"""
     print("\n⚡ Quick Integration Test...")
-    
+
+    # --- REPORT-SPECIFIC OUTPUT DIR (NEW) ---
+    report_name = parsed_results["metadata"]["original_report"].replace(".json", "")
+    output_dir = Path("temp_test_output") / "ai_analysis" / f"{report_name}_report"
+
     try:
-        # Test initial analysis only (fastest)
         result = await analysis_service.analyze_section_with_fallback(
             section_config={
                 "section": "initial_combined_analysis",
@@ -283,7 +289,8 @@ async def quick_integration_test(analysis_service, parsed_results, model_name):
             parsed_results=parsed_results,
             previous_analyses={},
             model_name=model_name,
-            analysis_id="quick_test"
+            analysis_id="quick_test",
+            output_dir=output_dir
         )
         
         print("✅ Quick test completed!")
@@ -309,17 +316,14 @@ async def test_enhanced_services():
     print("=" * 60)
     
     try:
-        # Let user select report
         report_path = select_sample_report()
         if report_path is None:
             return False
         
-        # Get test type
         test_type = get_test_options()
         if test_type is None:
             return False
         
-        # Initialize services
         print("\n1. Initializing services...")
         model_service = EnhancedModelService()
         parser_service = ParserService(models_dir=Path("app/parser"))
@@ -328,11 +332,9 @@ async def test_enhanced_services():
         
         print("✅ Services initialized successfully")
         
-        # Parse report or use mock data
         parsed_results = None
         if report_path == "mock":
             print("📝 Using mock data for testing...")
-            # Create simple mock data
             parsed_results = {
                 "metadata": {
                     "original_report": "mock_report.json",
@@ -347,16 +349,15 @@ async def test_enhanced_services():
             }
         else:
             print(f"2. Parsing report: {report_path.name}")
+            parsed_output_dir = Path("temp_test_output") / "parsed"
             parsed_results = parser_service.parse_complete_report(
                 report_path, 
-                Path("temp_test_output") / "parsed"
+                parsed_output_dir
             )
             print(f"✅ Report parsed. Sections: {len(parsed_results['metadata']['sections_parsed'])}")
         
-        # Use a reliable model for testing
         model_name = "gemini-2.5-flash"
         
-        # Execute selected test
         if test_type == 1:
             await test_full_progressive_analysis(analysis_service, parsed_results, model_name)
         elif test_type == 2:
@@ -379,10 +380,8 @@ async def test_enhanced_services():
 
 
 if __name__ == "__main__":
-    # Create test output directory
     Path("temp_test_output").mkdir(exist_ok=True)
     
-    # Run the test
     success = asyncio.run(test_enhanced_services())
     
     if success:

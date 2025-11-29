@@ -161,6 +161,7 @@ async def upload_and_analyze_file(
 async def parse_and_analyze_existing_report(
     file: UploadFile = File(...),
     model_name: Optional[str] = None,
+    analysis_service: AnalysisService = Depends(get_analysis_service),
     parser_service: ParserService = Depends(get_parser_service),
     enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service)
 ):
@@ -190,6 +191,8 @@ async def parse_and_analyze_existing_report(
                 temp_path, 
                 Path("temp_parse_output")
             )
+            await analysis_service.collection.insert_one(parsed_results)
+            
             
             print(f"✅ Parsing completed. Sections: {len(parsed_results['metadata']['sections_parsed'])}")
 
@@ -199,6 +202,8 @@ async def parse_and_analyze_existing_report(
                 parsed_results=parsed_results,
                 model_name=model_name
             )
+            
+            
 
             return {
                 "status": "success",
