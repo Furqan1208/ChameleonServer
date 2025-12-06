@@ -52,7 +52,7 @@ class SectionAnalyzer:
             print(f"Analysis failed for {section_config['section']}: {str(e)}")
             import traceback
 
-            traceback.print_exc()  # Add detailed error trace
+            traceback.print_exc()
             return {
                 "section": section_config["section"],
                 "error": str(e),
@@ -73,7 +73,6 @@ class SectionAnalyzer:
         section_name = section_config["section"]
         section_data = parsed_results["sections"][section_config["input_sections"][0]]
 
-        # Get chunks - these are now ChunkedData objects
         chunked_data_list = self._get_chunks(section_name, section_data)
 
         continuation_prompt_filename = section_config.get("continuation_prompt")
@@ -85,11 +84,139 @@ class SectionAnalyzer:
 
         print(f"Processing {len(chunked_data_list)} chunks for {section_name}")
 
+        # ✅ NEW: Parallel chunk processing
+        enable_parallel_chunks = section_config.get("parallel_chunks", True)
+        max_parallel_chunks = section_config.get("max_parallel_chunks", 3)
+
+        if enable_parallel_chunks and len(chunked_data_list) > 1:
+            chunk_results = await self._process_chunks_parallel(
+                chunked_data_list,
+                section_name,
+                prompt_template,
+                continuation_prompt,
+                context,
+                model_name,
+                analysis_id,
+                max_parallel_chunks,
+            )
+        else:
+            chunk_results = await self._process_chunks_sequential(
+                chunked_data_list,
+                section_name,
+                prompt_template,
+                continuation_prompt,
+                context,
+                model_name,
+                analysis_id,
+            )
+
+        return {
+            "section": section_name,
+            "type": "chunked",
+            "total_chunks": len(chunked_data_list),
+            "chunks_analyzed": len([c for c in chunk_results if "analysis" in c]),
+            "chunks_failed": len([c for c in chunk_results if "error" in c]),
+            "chunk_results": chunk_results,
+            "combined_analysis": self._combine_chunks(chunk_results),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    async def _process_chunks_parallel(
+        self,
+        chunked_data_list: List,
+        section_name: str,
+        prompt_template: str,
+        continuation_prompt: Optional[str],
+        context: str,
+        model_name: Optional[str],
+        analysis_id: str,
+        max_parallel: int,
+    ) -> List[Dict[str, Any]]:
+        """Process chunks in parallel."""
+        print(f"  → Using parallel processing (max {max_parallel} concurrent)")
+
+        semaphore = asyncio.Semaphore(max_parallel)
+
+        async def process_single_chunk(idx: int, chunked_data):
+            async with semaphore:
+                chunk_info_dict = {
+                    "current_chunk": chunked_data.chunk_info.current_chunk,
+                    "total_chunks": chunked_data.chunk_info.total_chunks,
+                    "items_in_chunk": chunked_data.chunk_info.items_in_chunk,
+                    "estimated_tokens": chunked_data.chunk_info.estimated_tokens,
+                }
+
+                if chunked_data.chunk_info.additional_metrics:
+                    chunk_info_dict.update(chunked_data.chunk_info.additional_metrics)
+
+                # Use initial prompt for all chunks in parallel mode
+                full_prompt = self._build_prompt(
+                    prompt_template,
+                    context,
+                    chunked_data.data,
+                    chunk_info_dict,
+                    section_name,
+                )
+
+                task_id = f"{section_name}_chunk_{chunk_info_dict['current_chunk']}"
+
+                try:
+                    result = await self._call_with_fallback(
+                        full_prompt, model_name, analysis_id, task_id
+                    )
+
+                    analysis = self.json_extractor.extract(result.get("response", ""))
+
+                    return {
+                        "chunk_number": chunk_info_dict["current_chunk"],
+                        "total_chunks": chunk_info_dict["total_chunks"],
+                        "chunk_info": chunk_info_dict,
+                        "analysis": analysis,
+                        "ai_model": result.get("model"),
+                        "api_key_index": result.get("api_key_index"),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                except Exception as e:
+                    print(
+                        f"  ✗ Chunk {chunk_info_dict['current_chunk']} failed: {str(e)}"
+                    )
+                    return {
+                        "chunk_number": chunk_info_dict["current_chunk"],
+                        "total_chunks": chunk_info_dict["total_chunks"],
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+        # Process all chunks in parallel
+        tasks = [
+            process_single_chunk(idx, chunk)
+            for idx, chunk in enumerate(chunked_data_list)
+        ]
+        chunk_results = await asyncio.gather(*tasks)
+
+        # Sort by chunk number to maintain order
+        chunk_results = sorted(chunk_results, key=lambda x: x.get("chunk_number", 0))
+
+        return chunk_results
+
+    async def _process_chunks_sequential(
+        self,
+        chunked_data_list: List,
+        section_name: str,
+        prompt_template: str,
+        continuation_prompt: Optional[str],
+        context: str,
+        model_name: Optional[str],
+        analysis_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Process chunks sequentially (original method)."""
+        print("  → Using sequential processing")
+
         chunk_results = []
         previous_chunk = None
 
         for idx, chunked_data in enumerate(chunked_data_list):
-            # ✅ FIX: Access ChunkedData attributes properly
             chunk_info_dict = {
                 "current_chunk": chunked_data.chunk_info.current_chunk,
                 "total_chunks": chunked_data.chunk_info.total_chunks,
@@ -97,7 +224,6 @@ class SectionAnalyzer:
                 "estimated_tokens": chunked_data.chunk_info.estimated_tokens,
             }
 
-            # Add additional metrics if they exist
             if chunked_data.chunk_info.additional_metrics:
                 chunk_info_dict.update(chunked_data.chunk_info.additional_metrics)
 
@@ -112,12 +238,11 @@ class SectionAnalyzer:
                 else context
             )
 
-            # ✅ FIX: Access chunk data properly
             full_prompt = self._build_prompt(
                 current_prompt,
                 chunk_context,
-                chunked_data.data,  # Access .data attribute
-                chunk_info_dict,  # Use the dict we created
+                chunked_data.data,
+                chunk_info_dict,
                 section_name,
             )
 
@@ -137,6 +262,7 @@ class SectionAnalyzer:
                     "chunk_info": chunk_info_dict,
                     "analysis": analysis,
                     "ai_model": result.get("model"),
+                    "api_key_index": result.get("api_key_index"),
                     "timestamp": datetime.now().isoformat(),
                 }
 
@@ -160,16 +286,7 @@ class SectionAnalyzer:
                     }
                 )
 
-        return {
-            "section": section_name,
-            "type": "chunked",
-            "total_chunks": len(chunked_data_list),
-            "chunks_analyzed": len([c for c in chunk_results if "analysis" in c]),
-            "chunks_failed": len([c for c in chunk_results if "error" in c]),
-            "chunk_results": chunk_results,
-            "combined_analysis": self._combine_chunks(chunk_results),
-            "timestamp": datetime.now().isoformat(),
-        }
+        return chunk_results
 
     async def _analyze_standard(
         self,
@@ -197,6 +314,7 @@ class SectionAnalyzer:
                 "section": section_config["section"],
                 "type": "standard",
                 "ai_model": result.get("model"),
+                "api_key_index": result.get("api_key_index"),
                 "analysis": analysis,
                 "timestamp": datetime.now().isoformat(),
             }
@@ -215,8 +333,9 @@ class SectionAnalyzer:
         last_error = None
         for model_name in models:
             try:
+                # ✅ NEW: Pass task_id for parallel tracking
                 result = await self.model_service.process_request(
-                    prompt=prompt, model_name=model_name
+                    prompt=prompt, model_name=model_name, task_id=section_name
                 )
 
                 if result.get("response") and len(result["response"].strip()) > 50:
@@ -323,11 +442,7 @@ class SectionAnalyzer:
         return f"{prompt}\n\n{context}" if context else prompt
 
     def _get_chunks(self, section_name: str, section_data: Dict) -> List:
-        """
-        Get chunks for a section. Returns list of ChunkedData objects.
-
-        ✅ These methods return ChunkedData objects, not dictionaries!
-        """
+        """Get chunks for a section. Returns list of ChunkedData objects."""
         if section_name == "behavior_analysis":
             return self.chunking_service.chunk_behavior_data(section_data)
         elif section_name == "strings_analysis":
@@ -335,8 +450,6 @@ class SectionAnalyzer:
         elif section_name == "memory_analysis":
             return self.chunking_service.chunk_memory_data(section_data)
         else:
-            # For non-chunkable sections, we need to create a compatible structure
-            # Import ChunkedData and ChunkInfo if they're available, or create a simple wrapper
             from dataclasses import dataclass
             from typing import Any
 
@@ -359,28 +472,25 @@ class SectionAnalyzer:
         return section_config["input_sections"][0] in parsed_results["sections"]
 
     def _combine_chunks(self, chunk_results: List[Dict]) -> Dict[str, Any]:
-        """
-        Combine analysis results from multiple chunks into a summary.
-        """
+        """Combine analysis results from multiple chunks into a summary."""
         successful = [c for c in chunk_results if "analysis" in c]
 
         if not successful:
             return {"error": "All chunks failed", "total_chunks": len(chunk_results)}
 
-        # Create a more detailed summary
         combined = {
             "total_chunks_processed": len(successful),
             "chunks_failed": len(chunk_results) - len(successful),
             "summary": f"Analyzed {len(successful)} of {len(chunk_results)} chunks successfully",
         }
 
-        # Optionally aggregate key findings from all chunks
         if successful:
             combined["chunks_summary"] = [
                 {
                     "chunk_number": c["chunk_number"],
                     "has_analysis": "analysis" in c,
                     "model": c.get("ai_model", "unknown"),
+                    "api_key": c.get("api_key_index"),
                 }
                 for c in chunk_results
             ]

@@ -1,4 +1,3 @@
-# D:\FYP\ChameleonServer\app\controllers\analysis_routes.py
 import json
 import uuid
 from pathlib import Path
@@ -9,12 +8,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.mongodb import get_database
-from app.services.analysis_service import AnalysisService
-from app.services.enhanced_model_service import EnhancedModelService
-from app.services.parser_service import ParserService
+from app.services.ai_analysis_service import AIAnalysisService
+from app.services.cape_analysis_service import CapeAnalysisService
 from app.services.chunking_service import ChunkingService
-from app.services.enhanced_analysis_service import EnhancedAnalysisService
-from app.services.robust_model_service import RobustModelService
+from app.services.model_service import ModelService
+from app.services.parser_service import ParserService
 
 router = APIRouter(
     prefix="/analysis",
@@ -23,330 +21,288 @@ router = APIRouter(
 )
 
 
-# Dependency injection functions
-async def get_analysis_service(db: AsyncIOMotorDatabase = Depends(get_database)):
-    return AnalysisService(db)
+async def get_database_dep(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Get database connection."""
+    return db
 
 
-async def get_enhanced_model_service():
-    return EnhancedModelService()
+async def get_analysis_service(db: AsyncIOMotorDatabase = Depends(get_database_dep)):
+    """Get CAPE analysis service."""
+    return CapeAnalysisService(db)
 
 
-async def get_robust_model_service(
-    enhanced_model_service: EnhancedModelService = Depends(get_enhanced_model_service)
-):
-    return RobustModelService(enhanced_model_service)
+async def get_model_service():
+    """Get AI model service with parallel support."""
+    return ModelService()
 
 
 async def get_parser_service():
+    """Get CAPE report parser service."""
     return ParserService(models_dir=Path("app/parser"))
 
 
 async def get_chunking_service():
+    """Get chunking service for large sections."""
     return ChunkingService()
 
 
-async def get_enhanced_analysis_service(
-    enhanced_model_service: EnhancedModelService = Depends(get_enhanced_model_service),
+async def get_ai_analysis_service(
+    model_service: ModelService = Depends(get_model_service),
     parser_service: ParserService = Depends(get_parser_service),
-    chunking_service: ChunkingService = Depends(get_chunking_service)
+    chunking_service: ChunkingService = Depends(get_chunking_service),
 ):
-    return EnhancedAnalysisService(enhanced_model_service, parser_service, chunking_service)
+    """Get AI analysis service with parallel processing."""
+    return AIAnalysisService(model_service, parser_service, chunking_service)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def upload_and_analyze_file(
+async def complete_malware_analysis(
     file: UploadFile = File(...),
-    model_name: Optional[str] = None,
-    analysis_service: AnalysisService = Depends(get_analysis_service),
+    model_name: Optional[str] = "gemini-2.5-flash",
+    enable_parallel: bool = True,
+    max_parallel_sections: int = 4,
+    analysis_service: CapeAnalysisService = Depends(get_analysis_service),
     parser_service: ParserService = Depends(get_parser_service),
-    enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service),
+    ai_analysis_service: AIAnalysisService = Depends(get_ai_analysis_service),
+    db: AsyncIOMotorDatabase = Depends(get_database_dep),
 ):
     """
-    Upload a malware file to CAPEv2 server for analysis, parse the result,
-    and process with AI model using enhanced progressive analysis with chunking.
+    Complete malware analysis pipeline with parallel AI processing.
+
+    Workflow:
+    1. Submit file to CAPEv2 sandbox for dynamic analysis
+    2. Parse CAPE report into structured sections
+    3. Perform parallel AI analysis on all sections
+    4. Store results in MongoDB
+    5. Return comprehensive analysis results
+
+    Args:
+        file: Malware file to analyze
+        model_name: AI model to use (default: gemini-2.5-flash)
+        enable_parallel: Enable parallel section processing (default: True)
+        max_parallel_sections: Max sections to process simultaneously (default: 4)
+
+    Returns:
+        Complete analysis results including CAPE, parsed sections, and AI analysis
     """
+    analysis_id = str(uuid.uuid4())
+    temp_files = []
+
     try:
-        if not file.filename or not any(
-            file.filename.lower().endswith(ext)
-            for ext in [".exe", ".dll", ".pdf", ".doc", ".docx", ".js", ".vbs"]
-        ):
+        if not file.filename:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unsupported file type. Supported: exe, dll, pdf, doc, docx, js, vbs",
+                status_code=status.HTTP_400_BAD_REQUEST, detail="No filename provided"
             )
 
-        analysis_id = str(uuid.uuid4())
+        supported_extensions = [
+            ".exe",
+            ".dll",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".js",
+            ".vbs",
+            ".zip",
+            ".rar",
+        ]
 
-        print(f"🚀 Starting enhanced analysis {analysis_id} for file: {file.filename}")
+        if not any(file.filename.lower().endswith(ext) for ext in supported_extensions):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type. Supported: {', '.join(supported_extensions)}",
+            )
 
-        print("STEP 1: Submitting file to CAPEv2...")
+        print(f"\n{'=' * 70}")
+        print("Starting Complete Malware Analysis")
+        print(f"{'=' * 70}")
+        print(f"File: {file.filename}")
+        print(f"Analysis ID: {analysis_id}")
+        print(f"AI Model: {model_name}")
+        print(f"Parallel Mode: {'Enabled' if enable_parallel else 'Disabled'}")
+        if enable_parallel:
+            print(f"Max Parallel Sections: {max_parallel_sections}")
+        print(f"{'=' * 70}\n")
+
+        print("STEP 1: Submitting to CAPEv2 Sandbox...")
+        print("-" * 70)
         cape_report = await analysis_service.upload_and_analyze(file)
 
         if not cape_report:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to analyze file with CAPEv2",
+                detail="CAPEv2 analysis failed - no report returned",
             )
 
-        print(
-            f"✅ CAPE analysis completed, task ID: {cape_report.get('task_id', 'N/A')}"
-        )
+        cape_task_id = cape_report.get("task_id", "N/A")
+        print("CAPEv2 analysis completed")
+        print(f"Task ID: {cape_task_id}")
+        print(f"Report size: {len(str(cape_report))} characters\n")
 
         with NamedTemporaryFile(mode="w", suffix=".json", delete=False) as temp_file:
             json.dump(cape_report, temp_file, indent=2)
             temp_report_path = Path(temp_file.name)
+            temp_files.append(temp_report_path)
 
-        try:
-            print("STEP 2: Parsing CAPE report...")
-            parsed_results = parser_service.parse_complete_report(
-                temp_report_path, Path("temp_analysis_output")
-            )
+        print("STEP 2: Parsing CAPE Report...")
+        print("-" * 70)
+        output_dir = Path("temp_analysis_output") / analysis_id
+        parsed_results = parser_service.parse_complete_report(
+            temp_report_path, output_dir / "parsed"
+        )
+        sections_parsed = parsed_results["metadata"]["sections_parsed"]
+        print("Report parsing completed")
+        print(f"Sections parsed: {len(sections_parsed)}")
+        print(f"Sections: {', '.join(sections_parsed)}")
+        print(f"Output: {output_dir / 'parsed'}\n")
 
-            print(
-                f"✅ Report parsed successfully. Sections: {len(parsed_results['metadata']['sections_parsed'])}"
-            )
-
-            # --- STEP 3: Enhanced Progressive AI Analysis with Chunking ---
-            print("STEP 3: Starting enhanced progressive AI analysis with chunking...")
-            
-            # Use enhanced analysis service with chunking support
-            analysis_result = await enhanced_analysis_service.progressive_analysis(
-                parsed_results=parsed_results,
-                model_name=model_name,
-                output_dir=Path("temp_analysis_output") / analysis_id
-            )
-
-            print("✅ Enhanced progressive AI analysis completed")
-
-            # --- STEP 4: Store results in database ---
-            final_result = {
-                "analysis_id": analysis_id,
-                "filename": file.filename,
-                "cape_report": cape_report,
-                "parsed_results": parsed_results,
-                "enhanced_ai_analysis": analysis_result,
-                "timestamp": parsed_results["metadata"]["parsed_timestamp"],
-            }
-
-            # Store in MongoDB
-            await analysis_service.collection.insert_one(final_result)
-
-            return {
-                "analysis_id": analysis_id,
-                "filename": file.filename,
-                "status": "completed",
-                "sections_parsed": parsed_results["metadata"]["sections_parsed"],
-                "ai_analyses_performed": analysis_result["sections_analyzed"],
-                "chunking_analysis": analysis_result.get("chunking_analysis", {}),
-                "model_usage": analysis_result.get("model_usage", {}),
-                "output_directory": analysis_result["output_directory"],
-                "final_report_available": "final_synthesis" in analysis_result["results"]
-            }
-
-        finally:
-            # Clean up temporary file
-            temp_report_path.unlink(missing_ok=True)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Enhanced analysis failed: {str(e)}",
-        ) from e
-
-
-@router.post("/parse-and-analyze")
-async def parse_and_analyze_existing_report(
-    file: UploadFile = File(...),
-    model_name: Optional[str] = None,
-    analysis_service: AnalysisService = Depends(get_analysis_service),
-    parser_service: ParserService = Depends(get_parser_service),
-    enhanced_analysis_service: EnhancedAnalysisService = Depends(get_enhanced_analysis_service)
-):
-    """
-    Parse existing CAPE report and perform enhanced progressive AI analysis
-    with chunking support. Perfect for testing without CAPE access.
-    """
-    try:
-        if not file.filename or not file.filename.lower().endswith(".json"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only JSON files are supported"
-            )
-
-        # Save uploaded file temporarily
-        with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_path = Path(temp_file.name)
-
-        print(f"📄 Processing CAPE report: {file.filename}")
-        
-        try:
-            # Step 1: Parse the CAPE report
-            print("🔧 Step 1: Parsing CAPE report...")
-            parsed_results = parser_service.parse_complete_report(
-                temp_path, 
-                Path("temp_parse_output")
-            )
-            await analysis_service.collection.insert_one(parsed_results)
-            
-            
-            print(f"✅ Parsing completed. Sections: {len(parsed_results['metadata']['sections_parsed'])}")
-
-            # Step 2: Enhanced Progressive AI Analysis with chunking
-            print("🤖 Step 2: Starting enhanced progressive AI analysis with chunking...")
-            analysis_result = await enhanced_analysis_service.progressive_analysis(
-                parsed_results=parsed_results,
-                model_name=model_name
-            )
-            
-            
-
-            return {
-                "status": "success",
-                "analysis_id": analysis_result["analysis_id"],
-                "original_file": file.filename,
-                "parsed_sections": parsed_results["metadata"]["sections_parsed"],
-                "ai_analyses_performed": analysis_result["sections_analyzed"],
-                "chunking_analysis": analysis_result.get("chunking_analysis", {}),
-                "model_usage": analysis_result.get("model_usage", {}),
-                "output_directory": analysis_result["output_directory"],
-                "final_report_available": "final_synthesis" in analysis_result["results"]
-            }
-
-        finally:
-            # Clean up temporary file
-            temp_path.unlink(missing_ok=True)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Parse and analyze failed: {str(e)}"
-        ) from e
-
-
-@router.post("/enhanced-ai-only")
-async def enhanced_ai_analysis_only(
-    prompt: str,
-    model_name: Optional[str] = None,
-    file: UploadFile = File(None),
-    robust_model_service: RobustModelService = Depends(get_robust_model_service),
-):
-    """
-    Use enhanced AI model service with robust fallback for analysis. 
-    Can optionally include a file for context.
-    """
-    try:
-        file_content = None
-        filename = None
-
-        if file:
-            file_content = await file.read()
-            filename = file.filename
-
-        result = await robust_model_service.process_request_with_enhanced_fallback(
-            prompt=prompt,
-            file_content=file_content,
-            filename=filename,
-            preferred_model=model_name,
-            analysis_id="direct_ai_request",
-            section_name="direct_analysis"
+        print("STEP 3: AI Analysis Pipeline...")
+        print("-" * 70)
+        ai_analysis_result = await ai_analysis_service.analyze(
+            parsed_results=parsed_results,
+            model_name=model_name,
+            enable_parallel=enable_parallel,
+            max_parallel_sections=max_parallel_sections,
         )
 
-        return {
-            "status": "success",
-            "model_used": result.get("metadata", {}).get("model_used"),
-            "reliability_score": result.get("metadata", {}).get("reliability_score"),
-            "response_time": result.get("metadata", {}).get("response_time_seconds"),
-            "quality_score": result.get("metadata", {}).get("quality_score"),
-            "total_attempts": result.get("metadata", {}).get("total_attempts"),
-            "response": result.get("response"),
-            "prompt_length": len(prompt),
-            "file_included": file is not None,
-        }
+        print("\nAI analysis completed")
+        print(f"Analysis ID: {ai_analysis_result['analysis_id']}")
+        print(f"Duration: {ai_analysis_result.get('duration_seconds', 0):.2f}s")
+        print(f"Sections analyzed: {len(ai_analysis_result['sections_analyzed'])}")
+        print(f"Model usage: {ai_analysis_result.get('model_usage', {})}")
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Enhanced AI analysis failed: {str(e)}",
-        ) from e
+        if "api_key_stats" in ai_analysis_result:
+            stats = ai_analysis_result["api_key_stats"]
+            if "gemini" in stats:
+                print(f"API keys used: {stats['gemini']['total_keys']}")
+                total_requests = sum(
+                    s["requests"] for s in stats["gemini"]["key_stats"].values()
+                )
+                print(f"Total API requests: {total_requests}")
+        print()
 
-
-@router.get("/model-stats")
-async def get_model_statistics(
-    robust_model_service: RobustModelService = Depends(get_robust_model_service)
-):
-    """
-    Get statistics about model performance and reliability.
-    """
-    try:
-        stats = robust_model_service.get_model_stats()
-        best_models = robust_model_service.get_best_models(5)
-        
-        return {
-            "status": "success",
-            "best_models": best_models,
-            "model_reliability": stats["model_reliability"],
-            "model_performance": stats["model_performance"],
-            "failure_summary": stats["failure_tracker_summary"],
-            "success_summary": stats["success_tracker_summary"]
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get model statistics: {str(e)}"
-        ) from e
-
-
-@router.post("/cape-only", status_code=status.HTTP_201_CREATED)
-async def cape_analysis_only(
-    file: UploadFile = File(...),
-    analysis_service: AnalysisService = Depends(get_analysis_service),
-):
-    """
-    Only perform CAPEv2 analysis without parsing or AI processing.
-    Useful for testing CAPE integration.
-    """
-    try:
-        print(f"CAPE-only analysis for: {file.filename}")
-
-        cape_report = await analysis_service.upload_and_analyze(file)
-
-        if not cape_report:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="CAPEv2 analysis failed",
-            )
-
-        return {
-            "status": "success",
+        print("STEP 4: Storing Results in Database...")
+        print("-" * 70)
+        final_result = {
+            "analysis_id": analysis_id,
             "filename": file.filename,
-            "report_keys": list(cape_report.keys()) if cape_report else [],
-            "message": "CAPE analysis completed successfully",
+            "timestamp": parsed_results["metadata"]["parsed_timestamp"],
+            "cape_analysis": {
+                "task_id": cape_task_id,
+                "report_keys": list(cape_report.keys()) if cape_report else [],
+                "report": cape_report,
+            },
+            "parsed_sections": {
+                "sections": sections_parsed,
+                "metadata": parsed_results["metadata"],
+            },
+            "ai_analysis": {
+                "analysis_id": ai_analysis_result["analysis_id"],
+                "sections_analyzed": ai_analysis_result["sections_analyzed"],
+                "duration_seconds": ai_analysis_result.get("duration_seconds", 0),
+                "model_usage": ai_analysis_result.get("model_usage", {}),
+                "api_key_stats": ai_analysis_result.get("api_key_stats", {}),
+                "chunking_summary": ai_analysis_result.get("chunking_summary", {}),
+                "parallel_mode": enable_parallel,
+                "results": ai_analysis_result["results"],
+            },
+            "output_directory": str(output_dir),
         }
 
+        insert_result = await db["analyses"].insert_one(final_result)
+        print("Stored in database")
+        print(f"Database ID: {insert_result.inserted_id}\n")
+
+        print(f"{'=' * 70}")
+        print("Analysis Pipeline Completed Successfully")
+        print(f"{'=' * 70}\n")
+
+        response = {
+            "status": "success",
+            "analysis_id": analysis_id,
+            "database_id": str(insert_result.inserted_id),
+            "filename": file.filename,
+            "timestamp": parsed_results["metadata"]["parsed_timestamp"],
+            "cape_analysis": {
+                "task_id": cape_task_id,
+                "status": "completed",
+                "report_sections": list(cape_report.keys()) if cape_report else [],
+            },
+            "parsing": {
+                "sections_parsed": sections_parsed,
+                "total_sections": len(sections_parsed),
+            },
+            "ai_analysis": {
+                "analysis_id": ai_analysis_result["analysis_id"],
+                "sections_analyzed": ai_analysis_result["sections_analyzed"],
+                "total_sections": len(ai_analysis_result["sections_analyzed"]),
+                "duration_seconds": ai_analysis_result.get("duration_seconds", 0),
+                "parallel_mode": enable_parallel,
+                "model_usage": ai_analysis_result.get("model_usage", {}),
+                "final_synthesis_available": "final_synthesis"
+                in ai_analysis_result["results"],
+            },
+            "performance": {
+                "parallel_processing": enable_parallel,
+                "max_parallel_sections": max_parallel_sections
+                if enable_parallel
+                else 1,
+                "api_key_stats": ai_analysis_result.get("api_key_stats", {}),
+            },
+            "output": {
+                "directory": str(output_dir),
+                "parsed_reports": str(output_dir / "parsed"),
+            },
+        }
+
+        return response
+
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"\nAnalysis Failed: {str(e)}\n")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"CAPE analysis failed: {str(e)}",
+            detail=f"Analysis pipeline failed: {str(e)}",
         ) from e
+    finally:
+        for temp_file in temp_files:
+            try:
+                temp_file.unlink(missing_ok=True)
+            except Exception as e:
+                print(f"Could not delete temp file {temp_file}: {e}")
 
 
-@router.post("/parse-only")
-async def parse_existing_report(
+@router.post("/parse-existing", status_code=status.HTTP_201_CREATED)
+async def analyze_existing_cape_report(
     file: UploadFile = File(...),
+    model_name: Optional[str] = "gemini-2.5-flash",
+    enable_parallel: bool = True,
+    max_parallel_sections: int = 4,
     parser_service: ParserService = Depends(get_parser_service),
+    ai_analysis_service: AIAnalysisService = Depends(get_ai_analysis_service),
+    db: AsyncIOMotorDatabase = Depends(get_database_dep),
 ):
     """
-    Parse an existing CAPE JSON report file.
-    Useful for testing the parser service.
+    Parse existing CAPE report and perform AI analysis.
+
+    Use this endpoint when you already have a CAPE JSON report
+    and want to skip the sandbox analysis step.
+
+    Args:
+        file: CAPE report JSON file
+        model_name: AI model to use
+        enable_parallel: Enable parallel processing
+        max_parallel_sections: Max parallel sections
+
+    Returns:
+        Complete analysis results (parsing + AI)
     """
+    analysis_id = str(uuid.uuid4())
+    temp_files = []
+
     try:
         if not file.filename or not file.filename.lower().endswith(".json"):
             raise HTTPException(
@@ -354,93 +310,138 @@ async def parse_existing_report(
                 detail="Only JSON files are supported",
             )
 
-        # Save uploaded file temporarily
+        print(f"\n{'=' * 70}")
+        print("Analyzing Existing CAPE Report")
+        print(f"{'=' * 70}")
+        print(f"File: {file.filename}")
+        print(f"Analysis ID: {analysis_id}")
+        print(f"Parallel Mode: {'Enabled' if enable_parallel else 'Disabled'}")
+        print(f"{'=' * 70}\n")
+
         with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_path = Path(temp_file.name)
+            temp_files.append(temp_path)
 
-        print(f"Parsing report file: {temp_path}")
-        try:
-            # Parse the report
-            parsed_results = parser_service.parse_complete_report(
-                temp_path, Path("temp_parse_output")
-            )
+        print("STEP 1: Parsing CAPE Report...")
+        print("-" * 70)
+        output_dir = Path("temp_analysis_output") / analysis_id
+        parsed_results = parser_service.parse_complete_report(
+            temp_path, output_dir / "parsed"
+        )
+        sections_parsed = parsed_results["metadata"]["sections_parsed"]
+        print("Parsing completed")
+        print(f"Sections: {len(sections_parsed)} - {', '.join(sections_parsed)}\n")
 
-            return {
-                "status": "success",
-                "original_file": file.filename,
-                "sections_parsed": parsed_results["metadata"]["sections_parsed"],
-                "section_summary": get_section_summary(parsed_results),
-                "output_location": "temp_parse_output",
-            }
+        # STEP 2: AI Analysis
+        print("STEP 2: AI Analysis Pipeline...")
+        print("-" * 70)
+        ai_analysis_result = await ai_analysis_service.analyze(
+            parsed_results=parsed_results,
+            model_name=model_name,
+            enable_parallel=enable_parallel,
+            max_parallel_sections=max_parallel_sections,
+        )
 
-        finally:
-            temp_path.unlink(missing_ok=True)
+        print("\nAI analysis completed")
+        print(f"Duration: {ai_analysis_result.get('duration_seconds', 0):.2f}s\n")
 
+        print("STEP 3: Storing in Database...")
+        print("-" * 70)
+        final_result = {
+            "analysis_id": analysis_id,
+            "filename": file.filename,
+            "source": "existing_report",
+            "timestamp": parsed_results["metadata"]["parsed_timestamp"],
+            "parsed_sections": {
+                "sections": sections_parsed,
+                "metadata": parsed_results["metadata"],
+            },
+            "ai_analysis": {
+                "analysis_id": ai_analysis_result["analysis_id"],
+                "sections_analyzed": ai_analysis_result["sections_analyzed"],
+                "duration_seconds": ai_analysis_result.get("duration_seconds", 0),
+                "model_usage": ai_analysis_result.get("model_usage", {}),
+                "api_key_stats": ai_analysis_result.get("api_key_stats", {}),
+                "parallel_mode": enable_parallel,
+                "results": ai_analysis_result["results"],
+            },
+        }
+
+        insert_result = await db["analyses"].insert_one(final_result)
+        print("Stored successfully\n")
+        print(f"{'=' * 70}")
+        print("Analysis Completed")
+        print(f"{'=' * 70}\n")
+
+        return {
+            "status": "success",
+            "analysis_id": analysis_id,
+            "database_id": str(insert_result.inserted_id),
+            "original_file": file.filename,
+            "parsing": {
+                "sections_parsed": sections_parsed,
+                "total_sections": len(sections_parsed),
+            },
+            "ai_analysis": {
+                "sections_analyzed": ai_analysis_result["sections_analyzed"],
+                "duration_seconds": ai_analysis_result.get("duration_seconds", 0),
+                "parallel_mode": enable_parallel,
+                "model_usage": ai_analysis_result.get("model_usage", {}),
+            },
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"\nAnalysis Failed: {str(e)}\n")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Parsing failed: {str(e)}",
+            detail=f"Analysis failed: {str(e)}",
         ) from e
+    finally:
+        for temp_file in temp_files:
+            try:
+                temp_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
-@router.post("/chunking-analysis")
-async def analyze_chunking_requirements(
-    file: UploadFile = File(...),
-    parser_service: ParserService = Depends(get_parser_service),
-    chunking_service: ChunkingService = Depends(get_chunking_service)
+@router.get("/{analysis_id}")
+async def get_analysis_results(
+    analysis_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database_dep),
 ):
     """
-    Analyze a CAPE report to determine chunking requirements for large sections.
+    Retrieve complete analysis results by ID.
+
+    Args:
+        analysis_id: Analysis ID returned from analysis endpoint
+
+    Returns:
+        Complete analysis results including all sections
     """
     try:
-        if not file.filename or not file.filename.lower().endswith(".json"):
+        result = await db["analyses"].find_one({"analysis_id": analysis_id})
+
+        if not result:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only JSON files are supported",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Analysis {analysis_id} not found",
             )
 
-        # Save uploaded file temporarily
-        with NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_path = Path(temp_file.name)
+        result.pop("_id", None)
 
-        try:
-            # Parse the report
-            parsed_results = parser_service.parse_complete_report(
-                temp_path, Path("temp_parse_output")
-            )
+        return {"status": "success", "data": result}
 
-            # Analyze chunking requirements
-            chunking_analysis = chunking_service.analyze_chunking_requirements(parsed_results)
-
-            return {
-                "status": "success",
-                "original_file": file.filename,
-                "chunking_analysis": chunking_analysis,
-                "sections_parsed": parsed_results["metadata"]["sections_parsed"],
-            }
-
-        finally:
-            temp_path.unlink(missing_ok=True)
-
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Chunking analysis failed: {str(e)}",
+            detail=f"Failed to retrieve analysis: {str(e)}",
         ) from e
-
-
-def get_section_summary(parsed_results):
-    """
-    Helper function to summarize parsed report sections.
-    """
-    metadata = parsed_results.get("metadata", {})
-    sections = metadata.get("sections_parsed", [])
-    return {
-        "total_sections": len(sections),
-        "sections": sections,
-        "parsed_timestamp": metadata.get("parsed_timestamp"),
-    }

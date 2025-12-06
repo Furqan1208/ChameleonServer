@@ -9,6 +9,8 @@ from google.genai import types
 from huggingface_hub import InferenceClient
 from openai import OpenAI
 
+from app.utils.api_key_pool import APIKeyPool
+
 load_dotenv()
 
 
@@ -19,11 +21,20 @@ class ModelService:
         self.timeout = int(os.getenv("REQUEST_TIMEOUT", "60"))
 
         self.gemini_clients = self._initialize_gemini_clients()
-        self.hf_client = self._initialize_huggingface_client()
-        self.openrouter_client = self._initialize_openrouter_client()
+        # self.hf_client = self._initialize_huggingface_client()
+        # self.openrouter_client = self._initialize_openrouter_client()
 
         self.model_configs = self._build_model_configs()
         self.fallback_priority = self._calculate_fallback_priority()
+
+        # Initialize API key pool for Gemini
+        self.gemini_pool = None
+        if self.gemini_clients:
+            self.gemini_pool = APIKeyPool(self.gemini_clients, max_concurrent_per_key=2)
+
+        # Semaphores for other providers
+        self.openrouter_semaphore = asyncio.Semaphore(3)
+        self.huggingface_semaphore = asyncio.Semaphore(2)
 
     def _initialize_gemini_clients(self) -> List[genai.Client]:
         api_keys = self._get_gemini_api_keys()
@@ -59,17 +70,17 @@ class ModelService:
 
         return keys
 
-    def _initialize_huggingface_client(self) -> Optional[InferenceClient]:
-        token = os.getenv("HUGGINGFACE_TOKEN")
-        if token:
-            return InferenceClient(token=token)
-        return None
+    # def _initialize_huggingface_client(self) -> Optional[InferenceClient]:
+    #     token = os.getenv("HUGGINGFACE_TOKEN")
+    #     if token:
+    #         return InferenceClient(token=token)
+    #     return None
 
-    def _initialize_openrouter_client(self) -> Optional[OpenAI]:
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if api_key:
-            return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-        return None
+    # def _initialize_openrouter_client(self) -> Optional[OpenAI]:
+    #     api_key = os.getenv("OPENROUTER_API_KEY")
+    #     if api_key:
+    #         return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+    #     return None
 
     def _build_model_configs(self) -> Dict[str, Dict[str, Any]]:
         configs = {}
@@ -108,101 +119,101 @@ class ModelService:
                 }
             )
 
-        if self.openrouter_client:
-            configs.update(
-                {
-                    "grok-4.1-fast-free": {
-                        "provider": "openrouter",
-                        "model_name": "x-ai/grok-4.1-fast:free",
-                        "client": self.openrouter_client,
-                        "context_length": 2000000,
-                        "priority": 1,
-                    },
-                    "grok-4.1-fast": {
-                        "provider": "openrouter",
-                        "model_name": "x-ai/grok-4.1-fast",
-                        "client": self.openrouter_client,
-                        "context_length": 2000000,
-                        "priority": 2,
-                    },
-                    "gemini-2.0-flash-exp-free": {
-                        "provider": "openrouter",
-                        "model_name": "google/gemini-2.0-flash-exp:free",
-                        "client": self.openrouter_client,
-                        "context_length": 1048576,
-                        "priority": 3,
-                    },
-                    "llama-3.3-70b-free": {
-                        "provider": "openrouter",
-                        "model_name": "meta-llama/llama-3.3-70b-instruct:free",
-                        "client": self.openrouter_client,
-                        "context_length": 131072,
-                        "priority": 4,
-                    },
-                    "llama-3.2-3b-free": {
-                        "provider": "openrouter",
-                        "model_name": "meta-llama/llama-3.2-3b-instruct:free",
-                        "client": self.openrouter_client,
-                        "context_length": 131072,
-                        "priority": 5,
-                    },
-                    "llama-3.1-8b-free": {
-                        "provider": "openrouter",
-                        "model_name": "meta-llama/llama-3.1-8b-instruct:free",
-                        "client": self.openrouter_client,
-                        "context_length": 131072,
-                        "priority": 6,
-                    },
-                    "qwen-2.5-7b-free": {
-                        "provider": "openrouter",
-                        "model_name": "qwen/qwen-2.5-7b-instruct:free",
-                        "client": self.openrouter_client,
-                        "context_length": 32768,
-                        "priority": 7,
-                    },
-                }
-            )
+        # if self.openrouter_client:
+        #     configs.update(
+        #         {
+        #             "grok-4.1-fast-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "x-ai/grok-4.1-fast:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 2000000,
+        #                 "priority": 1,
+        #             },
+        #             "grok-4.1-fast": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "x-ai/grok-4.1-fast",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 2000000,
+        #                 "priority": 2,
+        #             },
+        #             "gemini-2.0-flash-exp-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "google/gemini-2.0-flash-exp:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 1048576,
+        #                 "priority": 3,
+        #             },
+        #             "llama-3.3-70b-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "meta-llama/llama-3.3-70b-instruct:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 131072,
+        #                 "priority": 4,
+        #             },
+        #             "llama-3.2-3b-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "meta-llama/llama-3.2-3b-instruct:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 131072,
+        #                 "priority": 5,
+        #             },
+        #             "llama-3.1-8b-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "meta-llama/llama-3.1-8b-instruct:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 131072,
+        #                 "priority": 6,
+        #             },
+        #             "qwen-2.5-7b-free": {
+        #                 "provider": "openrouter",
+        #                 "model_name": "qwen/qwen-2.5-7b-instruct:free",
+        #                 "client": self.openrouter_client,
+        #                 "context_length": 32768,
+        #                 "priority": 7,
+        #             },
+        #         }
+        #     )
 
-        if self.hf_client:
-            configs.update(
-                {
-                    "MiniMaxAI": {
-                        "provider": "huggingface",
-                        "model_name": "MiniMaxAI/MiniMax-M2",
-                        "client": self.hf_client,
-                        "context_length": 32768,
-                        "priority": 1,
-                    },
-                    "gpt-oss-20b": {
-                        "provider": "huggingface",
-                        "model_name": "openai/gpt-oss-20b",
-                        "client": self.hf_client,
-                        "context_length": 4096,
-                        "priority": 2,
-                    },
-                    "llama-3.1-8b-hf": {
-                        "provider": "huggingface",
-                        "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-                        "client": self.hf_client,
-                        "context_length": 131072,
-                        "priority": 3,
-                    },
-                    "mistral-7b-hf": {
-                        "provider": "huggingface",
-                        "model_name": "mistralai/Mistral-7B-Instruct-v0.3",
-                        "client": self.hf_client,
-                        "context_length": 32768,
-                        "priority": 4,
-                    },
-                    "phi-3-mini": {
-                        "provider": "huggingface",
-                        "model_name": "microsoft/Phi-3-mini-4k-instruct",
-                        "client": self.hf_client,
-                        "context_length": 4096,
-                        "priority": 5,
-                    },
-                }
-            )
+        # if self.hf_client:
+        #     configs.update(
+        #         {
+        #             "MiniMaxAI": {
+        #                 "provider": "huggingface",
+        #                 "model_name": "MiniMaxAI/MiniMax-M2",
+        #                 "client": self.hf_client,
+        #                 "context_length": 32768,
+        #                 "priority": 1,
+        #             },
+        #             "gpt-oss-20b": {
+        #                 "provider": "huggingface",
+        #                 "model_name": "openai/gpt-oss-20b",
+        #                 "client": self.hf_client,
+        #                 "context_length": 4096,
+        #                 "priority": 2,
+        #             },
+        #             "llama-3.1-8b-hf": {
+        #                 "provider": "huggingface",
+        #                 "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        #                 "client": self.hf_client,
+        #                 "context_length": 131072,
+        #                 "priority": 3,
+        #             },
+        #             "mistral-7b-hf": {
+        #                 "provider": "huggingface",
+        #                 "model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+        #                 "client": self.hf_client,
+        #                 "context_length": 32768,
+        #                 "priority": 4,
+        #             },
+        #             "phi-3-mini": {
+        #                 "provider": "huggingface",
+        #                 "model_name": "microsoft/Phi-3-mini-4k-instruct",
+        #                 "client": self.hf_client,
+        #                 "context_length": 4096,
+        #                 "priority": 5,
+        #             },
+        #         }
+        #     )
 
         return configs
 
@@ -226,7 +237,18 @@ class ModelService:
         file_content: Optional[bytes] = None,
         filename: Optional[str] = None,
         model_name: Optional[str] = None,
+        task_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Process a request with parallel support.
+
+        Args:
+            prompt: The prompt to send
+            file_content: Optional file content
+            filename: Optional filename
+            model_name: Model to use
+            task_id: Optional task identifier for logging
+        """
         model_to_use = model_name or self.default_model
 
         if model_to_use not in self.model_configs:
@@ -241,17 +263,80 @@ class ModelService:
 
         provider = config["provider"]
         if provider == "gemini":
-            return await self._call_gemini_with_fallback(config, full_prompt)
-        elif provider == "openrouter":
-            return await self._call_openrouter(config, full_prompt)
-        elif provider == "huggingface":
-            return await self._call_huggingface(config, full_prompt)
+            return await self._call_gemini_parallel(config, full_prompt, task_id)
+        # elif provider == "openrouter":
+        #     async with self.openrouter_semaphore:
+        #         return await self._call_openrouter(config, full_prompt)
+        # elif provider == "huggingface":
+        #     async with self.huggingface_semaphore:
+        #         return await self._call_huggingface(config, full_prompt)
         else:
             raise ValueError(f"Unknown provider: {provider}")
+
+    async def _call_gemini_parallel(
+        self, config: Dict[str, Any], prompt: str, task_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Call Gemini API using key pool for parallel requests.
+        """
+        if not self.gemini_pool:
+            # Fallback to original method if pool not initialized
+            return await self._call_gemini_with_fallback(config, prompt)
+
+        model_name = config["model_name"]
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            key_idx, client = await self.gemini_pool.acquire_key()
+
+            try:
+                task_label = f"[{task_id}] " if task_id else ""
+                print(
+                    f"{task_label}Using Gemini key {key_idx + 1} (attempt {attempt + 1})"
+                )
+
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                        max_output_tokens=8192,
+                    ),
+                )
+
+                await self.gemini_pool.release_key(key_idx, success=True)
+
+                return {
+                    "response": response.text,
+                    "model": model_name,
+                    "api_key_index": key_idx + 1,
+                }
+
+            except Exception as e:
+                error_msg = str(e).lower()
+                is_rate_limit = any(
+                    keyword in error_msg
+                    for keyword in ["rate", "quota", "429", "resource_exhausted"]
+                )
+
+                await self.gemini_pool.release_key(key_idx, success=False)
+
+                if is_rate_limit and attempt < max_attempts - 1:
+                    wait_time = 2**attempt
+                    print(f"Rate limited on key {key_idx + 1}, waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                elif not is_rate_limit:
+                    # Non-rate-limit error, raise immediately
+                    raise
+
+        raise Exception("All attempts failed for parallel Gemini request")
 
     async def _call_gemini_with_fallback(
         self, config: Dict[str, Any], prompt: str
     ) -> Dict[str, Any]:
+        """Original sequential fallback method."""
         clients = config["clients"]
         model_name = config["model_name"]
 
@@ -310,103 +395,98 @@ class ModelService:
 
         raise Exception(f"All Gemini API keys exhausted. Last error: {last_error}")
 
-    async def _call_openrouter(
-        self, config: Dict[str, Any], prompt: str
-    ) -> Dict[str, Any]:
-        client = config["client"]
-        model_name = config["model_name"]
+    # async def _call_openrouter(
+    #     self, config: Dict[str, Any], prompt: str
+    # ) -> Dict[str, Any]:
+    #     client = config["client"]
+    #     model_name = config["model_name"]
 
-        last_error: Optional[Exception] = None
+    #     last_error: Optional[Exception] = None
 
-        for attempt in range(self.max_retries):
-            try:
-                response = await asyncio.to_thread(
-                    client.chat.completions.create,
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4096,
-                    temperature=0.7,
-                )
+    #     for attempt in range(self.max_retries):
+    #         try:
+    #             response = await asyncio.to_thread(
+    #                 client.chat.completions.create,
+    #                 model=model_name,
+    #                 messages=[{"role": "user", "content": prompt}],
+    #                 max_tokens=4096,
+    #                 temperature=0.7,
+    #             )
 
-                return {
-                    "response": response.choices[0].message.content,
-                    "model": model_name,
-                    "usage": {
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens,
-                    }
-                    if response.usage
-                    else {},
-                }
+    #             return {
+    #                 "response": response.choices[0].message.content,
+    #                 "model": model_name,
+    #                 "usage": {
+    #                     "prompt_tokens": response.usage.prompt_tokens,
+    #                     "completion_tokens": response.usage.completion_tokens,
+    #                     "total_tokens": response.usage.total_tokens,
+    #                 }
+    #                 if response.usage
+    #                 else {},
+    #             }
 
-            except Exception as e:
-                last_error = e
+    #         except Exception as e:
+    #             last_error = e
 
-                if self._should_retry(e, attempt):
-                    wait_time = 2**attempt
-                    print(f"OpenRouter rate limited. Waiting {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                    continue
+    #             if self._should_retry(e, attempt):
+    #                 wait_time = 2**attempt
+    #                 print(f"OpenRouter rate limited. Waiting {wait_time}s...")
+    #                 await asyncio.sleep(wait_time)
+    #                 continue
 
-                # not retryable → raise immediately
-                raise
+    #             raise
 
-        # If we exit the loop without returning, all retries failed
-        raise Exception(
-            f"OpenRouter request failed after {self.max_retries} attempts: {last_error}"
-        )
+    #     raise Exception(
+    #         f"OpenRouter request failed after {self.max_retries} attempts: {last_error}"
+    #     )
 
-    async def _call_huggingface(
-        self, config: Dict[str, Any], prompt: str
-    ) -> Dict[str, Any]:
-        client = config["client"]
-        model_name = config["model_name"]
+    # async def _call_huggingface(
+    #     self, config: Dict[str, Any], prompt: str
+    # ) -> Dict[str, Any]:
+    #     client = config["client"]
+    #     model_name = config["model_name"]
 
-        last_error: Optional[Exception] = None
+    #     last_error: Optional[Exception] = None
 
-        for attempt in range(self.max_retries):
-            try:
-                response = await asyncio.to_thread(
-                    client.chat.completions.create,
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                )
+    #     for attempt in range(self.max_retries):
+    #         try:
+    #             response = await asyncio.to_thread(
+    #                 client.chat.completions.create,
+    #                 model=model_name,
+    #                 messages=[{"role": "user", "content": prompt}],
+    #             )
 
-                # Safely extract message content
-                msg = response.choices[0].message
-                result = (
-                    msg.get("content")
-                    if isinstance(msg, dict)
-                    else getattr(msg, "content", None)
-                )
+    #             msg = response.choices[0].message
+    #             result = (
+    #                 msg.get("content")
+    #                 if isinstance(msg, dict)
+    #                 else getattr(msg, "content", None)
+    #             )
 
-                if not result:
-                    raise Exception(
-                        "HuggingFace returned empty or invalid response content"
-                    )
+    #             if not result:
+    #                 raise Exception(
+    #                     "HuggingFace returned empty or invalid response content"
+    #                 )
 
-                return {
-                    "response": result,
-                    "model": model_name,
-                }
+    #             return {
+    #                 "response": result,
+    #                 "model": model_name,
+    #             }
 
-            except Exception as e:
-                last_error = e
+    #         except Exception as e:
+    #             last_error = e
 
-                if self._should_retry(e, attempt):
-                    wait_time = 5 * (attempt + 1)
-                    print(f"HuggingFace model loading. Waiting {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                    continue
+    #             if self._should_retry(e, attempt):
+    #                 wait_time = 5 * (attempt + 1)
+    #                 print(f"HuggingFace model loading. Waiting {wait_time}s...")
+    #                 await asyncio.sleep(wait_time)
+    #                 continue
 
-                # Not retryable → fail immediately
-                raise
+    #             raise
 
-        # If we exit loop without returning or raising inside it → all retries failed
-        raise Exception(
-            f"HuggingFace request failed after {self.max_retries} attempts: {last_error}"
-        )
+    #     raise Exception(
+    #         f"HuggingFace request failed after {self.max_retries} attempts: {last_error}"
+    #     )
 
     def _prepare_prompt(
         self,
@@ -484,3 +564,10 @@ class ModelService:
         ]
         models.sort(key=lambda x: x[1].get("context_length", 0), reverse=True)
         return [name for name, _ in models]
+
+    def get_api_key_stats(self) -> Dict:
+        """Get statistics about API key usage."""
+        stats = {}
+        if self.gemini_pool:
+            stats["gemini"] = self.gemini_pool.get_stats()
+        return stats
