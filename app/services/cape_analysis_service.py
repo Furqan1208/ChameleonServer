@@ -1,4 +1,3 @@
-# D:\FYP\ChameleonServer\app\services\analysis_service.py
 import asyncio
 import os
 from typing import Dict, Optional
@@ -7,7 +6,7 @@ import aiohttp
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
-class AnalysisService:
+class CapeAnalysisService:
     def __init__(self, database: AsyncIOMotorDatabase):
         self.database = database
         self.collection = database.malware_analysis
