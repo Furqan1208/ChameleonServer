@@ -1,48 +1,46 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
-class TokenEstimator:
-    BEHAVIOR_PROCESS = 120
-    BEHAVIOR_API_CALL = 8
-    STRING_ITEM = 3
-    MEMORY_ENTRY = 80
-    ANOMALY_ITEM = 25
-    PROCESSTREE_NODE = 40
-    ENHANCED_EVENT = 30
-    ENCRYPTED_BUFFER = 20
-    YARA_RULE = 20
-    ADDRESS_SPACE_ENTRY = 15
+class DataExtractor:
+    @staticmethod
+    def extract_behavior_data(data: Any) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
 
-    @classmethod
-    def estimate_behavior_tokens(cls, chunk_data: Dict[str, Any]) -> int:
-        tokens = 0
+        if "data" in data:
+            return data["data"]
 
-        for process in chunk_data.get("processes", []):
-            tokens += cls.BEHAVIOR_PROCESS
-            tokens += len(process.get("calls", [])) * cls.BEHAVIOR_API_CALL
+        if "processes" in data:
+            return data
 
-        tokens += len(chunk_data.get("anomaly", [])) * cls.ANOMALY_ITEM
-        tokens += len(chunk_data.get("processtree", [])) * cls.PROCESSTREE_NODE
-        tokens += len(chunk_data.get("enhanced", [])) * cls.ENHANCED_EVENT
-        tokens += len(chunk_data.get("encryptedbuffers", [])) * cls.ENCRYPTED_BUFFER
+        return {}
 
-        return tokens
+    @staticmethod
+    def extract_strings_data(data: Any) -> Dict[str, Any]:
+        if isinstance(data, dict) and "categories" in data:
+            return data
+        return {}
 
-    @classmethod
-    def estimate_strings_tokens(cls, chunk_data: Dict[str, Any]) -> int:
-        return sum(
-            len(strings) * cls.STRING_ITEM
-            for strings in chunk_data.get("categories", {}).values()
-        )
+    @staticmethod
+    def extract_memory_data(data: Any) -> Dict[str, Any]:
+        if isinstance(data, dict) and "procmemory" in data:
+            return data
+        return {}
 
-    @classmethod
-    def estimate_memory_tokens(cls, chunk_data: Dict[str, Any]) -> int:
-        tokens = 0
+    @staticmethod
+    def filter_processtree(processtree: List[Dict], target_pids: set) -> List[Dict]:
+        if not processtree or not target_pids:
+            return []
 
-        for entry in chunk_data.get("procmemory", []):
-            tokens += cls.MEMORY_ENTRY
-            tokens += len(entry.get("yara", [])) * cls.YARA_RULE
-            tokens += len(entry.get("cape_yara", [])) * cls.YARA_RULE
-            tokens += len(entry.get("address_space", [])) * cls.ADDRESS_SPACE_ENTRY
+        relevant_nodes = []
 
-        return tokens
+        def traverse(nodes: List[Dict]) -> None:
+            for node in nodes:
+                if str(node.get("pid")) in target_pids:
+                    relevant_nodes.append(node)
+
+                if node.get("children"):
+                    traverse(node["children"])
+
+        traverse(processtree)
+        return relevant_nodes

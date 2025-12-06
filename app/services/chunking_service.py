@@ -2,8 +2,9 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from models import ChunkConfig, ChunkedData, ChunkInfo, SectionType
-from utils import DataExtractor, TokenEstimator
+from app.models.chunkingModel import ChunkConfig, ChunkedData, ChunkInfo, SectionType
+from app.utils.chunking.data_extractor import DataExtractor
+from app.utils.chunking.token_estimator import TokenEstimator
 
 logger = logging.getLogger(__name__)
 
