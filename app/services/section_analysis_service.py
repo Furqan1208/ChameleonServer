@@ -50,6 +50,9 @@ class SectionAnalyzer:
                 )
         except Exception as e:
             print(f"Analysis failed for {section_config['section']}: {str(e)}")
+            import traceback
+
+            traceback.print_exc()  # Add detailed error trace
             return {
                 "section": section_config["section"],
                 "error": str(e),
@@ -70,7 +73,9 @@ class SectionAnalyzer:
         section_name = section_config["section"]
         section_data = parsed_results["sections"][section_config["input_sections"][0]]
 
-        chunks = self._get_chunks(section_name, section_data)
+        # Get chunks - these are now ChunkedData objects
+        chunked_data_list = self._get_chunks(section_name, section_data)
+
         continuation_prompt_filename = section_config.get("continuation_prompt")
         continuation_prompt = (
             await self._load_prompt(continuation_prompt_filename)
@@ -78,13 +83,23 @@ class SectionAnalyzer:
             else None
         )
 
-        print(f"Processing {len(chunks)} chunks for {section_name}")
+        print(f"Processing {len(chunked_data_list)} chunks for {section_name}")
 
         chunk_results = []
         previous_chunk = None
 
-        for idx, chunk in enumerate(chunks):
-            chunk_info = chunk["chunk_info"]
+        for idx, chunked_data in enumerate(chunked_data_list):
+            # ✅ FIX: Access ChunkedData attributes properly
+            chunk_info_dict = {
+                "current_chunk": chunked_data.chunk_info.current_chunk,
+                "total_chunks": chunked_data.chunk_info.total_chunks,
+                "items_in_chunk": chunked_data.chunk_info.items_in_chunk,
+                "estimated_tokens": chunked_data.chunk_info.estimated_tokens,
+            }
+
+            # Add additional metrics if they exist
+            if chunked_data.chunk_info.additional_metrics:
+                chunk_info_dict.update(chunked_data.chunk_info.additional_metrics)
 
             current_prompt = (
                 continuation_prompt
@@ -97,8 +112,13 @@ class SectionAnalyzer:
                 else context
             )
 
+            # ✅ FIX: Access chunk data properly
             full_prompt = self._build_prompt(
-                current_prompt, chunk_context, chunk["data"], chunk_info, section_name
+                current_prompt,
+                chunk_context,
+                chunked_data.data,  # Access .data attribute
+                chunk_info_dict,  # Use the dict we created
+                section_name,
             )
 
             try:
@@ -106,15 +126,15 @@ class SectionAnalyzer:
                     full_prompt,
                     model_name,
                     analysis_id,
-                    f"{section_name}_chunk_{chunk_info['current_chunk']}",
+                    f"{section_name}_chunk_{chunk_info_dict['current_chunk']}",
                 )
 
                 analysis = self.json_extractor.extract(result.get("response", ""))
 
                 chunk_result = {
-                    "chunk_number": chunk_info["current_chunk"],
-                    "total_chunks": chunk_info["total_chunks"],
-                    "chunk_info": chunk_info,
+                    "chunk_number": chunk_info_dict["current_chunk"],
+                    "total_chunks": chunk_info_dict["total_chunks"],
+                    "chunk_info": chunk_info_dict,
                     "analysis": analysis,
                     "ai_model": result.get("model"),
                     "timestamp": datetime.now().isoformat(),
@@ -123,15 +143,18 @@ class SectionAnalyzer:
                 chunk_results.append(chunk_result)
                 previous_chunk = chunk_result
 
-                if idx < len(chunks) - 1:
+                if idx < len(chunked_data_list) - 1:
                     await asyncio.sleep(1)
 
             except Exception as e:
-                print(f"Chunk {chunk_info['current_chunk']} failed: {str(e)}")
+                print(f"Chunk {chunk_info_dict['current_chunk']} failed: {str(e)}")
+                import traceback
+
+                traceback.print_exc()
                 chunk_results.append(
                     {
-                        "chunk_number": chunk_info["current_chunk"],
-                        "total_chunks": chunk_info["total_chunks"],
+                        "chunk_number": chunk_info_dict["current_chunk"],
+                        "total_chunks": chunk_info_dict["total_chunks"],
                         "error": str(e),
                         "timestamp": datetime.now().isoformat(),
                     }
@@ -140,7 +163,7 @@ class SectionAnalyzer:
         return {
             "section": section_name,
             "type": "chunked",
-            "total_chunks": len(chunks),
+            "total_chunks": len(chunked_data_list),
             "chunks_analyzed": len([c for c in chunk_results if "analysis" in c]),
             "chunks_failed": len([c for c in chunk_results if "error" in c]),
             "chunk_results": chunk_results,
@@ -299,7 +322,12 @@ class SectionAnalyzer:
 
         return f"{prompt}\n\n{context}" if context else prompt
 
-    def _get_chunks(self, section_name: str, section_data: Dict) -> List[Dict]:
+    def _get_chunks(self, section_name: str, section_data: Dict) -> List:
+        """
+        Get chunks for a section. Returns list of ChunkedData objects.
+
+        ✅ These methods return ChunkedData objects, not dictionaries!
+        """
         if section_name == "behavior_analysis":
             return self.chunking_service.chunk_behavior_data(section_data)
         elif section_name == "strings_analysis":
@@ -307,24 +335,54 @@ class SectionAnalyzer:
         elif section_name == "memory_analysis":
             return self.chunking_service.chunk_memory_data(section_data)
         else:
-            return [
-                {
-                    "data": section_data,
-                    "chunk_info": {"current_chunk": 1, "total_chunks": 1},
-                }
-            ]
+            # For non-chunkable sections, we need to create a compatible structure
+            # Import ChunkedData and ChunkInfo if they're available, or create a simple wrapper
+            from dataclasses import dataclass
+            from typing import Any
+
+            @dataclass
+            class SimpleChunkInfo:
+                current_chunk: int = 1
+                total_chunks: int = 1
+                items_in_chunk: int = 1
+                estimated_tokens: int = 0
+                additional_metrics: Optional[dict] = None
+
+            @dataclass
+            class SimpleChunkedData:
+                data: Any
+                chunk_info: SimpleChunkInfo
+
+            return [SimpleChunkedData(data=section_data, chunk_info=SimpleChunkInfo())]
 
     def _has_section_data(self, parsed_results: Dict, section_config: Dict) -> bool:
         return section_config["input_sections"][0] in parsed_results["sections"]
 
     def _combine_chunks(self, chunk_results: List[Dict]) -> Dict[str, Any]:
+        """
+        Combine analysis results from multiple chunks into a summary.
+        """
         successful = [c for c in chunk_results if "analysis" in c]
 
         if not successful:
             return {"error": "All chunks failed", "total_chunks": len(chunk_results)}
 
-        return {
+        # Create a more detailed summary
+        combined = {
             "total_chunks_processed": len(successful),
             "chunks_failed": len(chunk_results) - len(successful),
-            "summary": f"Analyzed {len(successful)} of {len(chunk_results)} chunks",
+            "summary": f"Analyzed {len(successful)} of {len(chunk_results)} chunks successfully",
         }
+
+        # Optionally aggregate key findings from all chunks
+        if successful:
+            combined["chunks_summary"] = [
+                {
+                    "chunk_number": c["chunk_number"],
+                    "has_analysis": "analysis" in c,
+                    "model": c.get("ai_model", "unknown"),
+                }
+                for c in chunk_results
+            ]
+
+        return combined
