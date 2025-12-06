@@ -137,11 +137,17 @@ async def test_chunking_service(chunking_service, parsed_results):
             parsed_results["sections"]["behavior"]
         )
         print(f"   Behavior: {len(behavior_chunks)} chunks")
-        for i, chunk in enumerate(behavior_chunks, 1):
-            info = chunk["chunk_info"]
+        for i, chunk_data in enumerate(behavior_chunks, 1):
+            info = chunk_data.chunk_info
+            
+            # Get items count - check if it's in additional_metrics or use items_in_chunk
+            items_count = info.items_in_chunk
+            if info.additional_metrics and "processes_in_chunk" in info.additional_metrics:
+                items_count = info.additional_metrics["processes_in_chunk"]
+                
             print(
-                f"     Chunk {i}: {info['processes_in_chunk']} processes, "
-                f"{info['estimated_tokens']} estimated tokens"
+                f"     Chunk {i}: {items_count} processes, "
+                f"{info.estimated_tokens} estimated tokens"
             )
 
     if "strings" in parsed_results["sections"]:
@@ -149,11 +155,17 @@ async def test_chunking_service(chunking_service, parsed_results):
             parsed_results["sections"]["strings"]
         )
         print(f"   Strings: {len(strings_chunks)} chunks")
-        for i, chunk in enumerate(strings_chunks, 1):
-            info = chunk["chunk_info"]
+        for i, chunk_data in enumerate(strings_chunks, 1):
+            info = chunk_data.chunk_info
+            
+            # Get items count - check if it's in additional_metrics or use items_in_chunk
+            items_count = info.items_in_chunk
+            if info.additional_metrics and "strings_in_chunk" in info.additional_metrics:
+                items_count = info.additional_metrics["strings_in_chunk"]
+                
             print(
-                f"     Chunk {i}: {info['strings_in_chunk']} strings, "
-                f"{info['estimated_tokens']} estimated tokens"
+                f"     Chunk {i}: {items_count} strings, "
+                f"{info.estimated_tokens} estimated tokens"
             )
 
     return chunking_analysis
