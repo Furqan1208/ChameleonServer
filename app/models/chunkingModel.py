@@ -43,15 +43,3 @@ class TokenEstimationConfig:
     encrypted_buffer: int = 20
     yara_rule: int = 20
     address_space_entry: int = 15
-
-
-@dataclass
-class SectionChunkConfig:
-    behavior_chunk_size: int = 3
-    behavior_max_tokens: int = 8000
-
-    strings_chunk_size: int = 2000
-    strings_max_tokens: int = 6000
-
-    memory_chunk_size: int = 10
-    memory_max_tokens: int = 4000

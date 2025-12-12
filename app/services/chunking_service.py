@@ -2,7 +2,13 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from app.models.chunkingModel import ChunkConfig, ChunkedData, ChunkInfo, SectionType
+from app.config.chunking_config import SectionChunkConfig
+from app.models.chunkingModel import (
+    ChunkConfig,
+    ChunkedData,
+    ChunkInfo,
+    SectionType,
+)
 from app.utils.chunking.data_extractor import DataExtractor
 from app.utils.chunking.token_estimator import TokenEstimator
 
@@ -12,9 +18,18 @@ logger = logging.getLogger(__name__)
 class ChunkingService:
     def __init__(self):
         self.configs = {
-            SectionType.BEHAVIOR: ChunkConfig(chunk_size=3, max_tokens_estimate=8000),
-            SectionType.STRINGS: ChunkConfig(chunk_size=2000, max_tokens_estimate=6000),
-            SectionType.MEMORY: ChunkConfig(chunk_size=10, max_tokens_estimate=4000),
+            SectionType.BEHAVIOR: ChunkConfig(
+                chunk_size=SectionChunkConfig.behavior_chunk_size,
+                max_tokens_estimate=SectionChunkConfig.behavior_max_tokens,
+            ),
+            SectionType.STRINGS: ChunkConfig(
+                chunk_size=SectionChunkConfig.strings_chunk_size,
+                max_tokens_estimate=SectionChunkConfig.strings_max_tokens,
+            ),
+            SectionType.MEMORY: ChunkConfig(
+                chunk_size=SectionChunkConfig.memory_chunk_size,
+                max_tokens_estimate=SectionChunkConfig.memory_chunk_size,
+            ),
         }
         self.extractor = DataExtractor()
         self.estimator = TokenEstimator()
