@@ -17,7 +17,7 @@ class TokenEstimationConfig:
 
 @dataclass
 class SectionChunkConfig:
-    behavior_chunk_size: int = 3
+    behavior_chunk_size: int = 1
     behavior_max_tokens: int = 8000
 
     strings_chunk_size: int = 2000
