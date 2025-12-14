@@ -1,3 +1,4 @@
+# D:\FYP\ChameleonServer\app\controllers\analysis_routes\dependencies.py
 from pathlib import Path
 
 from fastapi import Depends
@@ -7,6 +8,7 @@ from app.database.mongodb import get_database
 from app.services.ai_analysis_service import AIAnalysisService
 from app.services.cape_analysis_service import CapeAnalysisService
 from app.services.chunking_service import ChunkingService
+from app.services.database_service import DatabaseService
 from app.services.model_service import ModelService
 from app.services.parser_service import ParserService
 
@@ -14,6 +16,11 @@ from app.services.parser_service import ParserService
 async def get_database_dep(db: AsyncIOMotorDatabase = Depends(get_database)):
     """Get database connection."""
     return db
+
+
+async def get_db_service(db: AsyncIOMotorDatabase = Depends(get_database_dep)):
+    """Get database service for storing analysis results."""
+    return DatabaseService(db)
 
 
 async def get_analysis_service(db: AsyncIOMotorDatabase = Depends(get_database_dep)):

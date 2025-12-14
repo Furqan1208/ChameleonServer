@@ -1,23 +1,33 @@
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.services.database_service import DatabaseService
 
-from app.services.report_structure_service import report_structure_service
-
-from .dependencies import get_database_dep
+from .dependencies import get_db_service
 
 router = APIRouter()
 
 
 @router.get("/reports")
-async def get_all_reports():
+async def get_all_reports(
+    limit: int = Query(100, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
-    Get all analysis reports.
+    Get all analysis reports from database with pagination.
     """
     try:
-        analyses = report_structure_service.get_all_analyses()
-        return {"status": "success", "data": analyses, "count": len(analyses)}
+        analyses = await db_service.get_all_analyses(limit=limit, skip=skip)
+        total = await db_service.get_analysis_count()
+
+        return {
+            "status": "success",
+            "data": analyses,
+            "count": len(analyses),
+            "total": total,
+            "limit": limit,
+            "skip": skip,
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -28,24 +38,32 @@ async def get_all_reports():
 @router.get("/{analysis_id}")
 async def get_analysis_results(
     analysis_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database_dep),
+    include_details: bool = Query(
+        False, description="Include CAPE, parsed, and AI results"
+    ),
+    db_service: DatabaseService = Depends(get_db_service),
 ):
     """
-    Retrieve complete analysis results by ID.
+    Retrieve analysis results by ID.
+    Set include_details=true to get all components (CAPE, parsed, AI results).
     """
     try:
-        analysis = report_structure_service.get_analysis(analysis_id)
+        if include_details:
+            # Get complete analysis with all components
+            result = await db_service.get_complete_analysis(analysis_id)
 
-        if not analysis:
-            db_result = await db["analyses"].find_one({"analysis_id": analysis_id})
-
-            if not db_result:
+            if not result:
                 raise HTTPException(404, f"Analysis {analysis_id} not found")
 
-            db_result.pop("_id", None)
-            return {"status": "success", "data": db_result}
+            return {"status": "success", "data": result}
+        else:
+            # Get only analysis metadata
+            analysis = await db_service.get_analysis(analysis_id)
 
-        return {"status": "success", "data": analysis}
+            if not analysis:
+                raise HTTPException(404, f"Analysis {analysis_id} not found")
+
+            return {"status": "success", "data": analysis}
 
     except HTTPException:
         raise
@@ -54,16 +72,19 @@ async def get_analysis_results(
 
 
 @router.get("/{analysis_id}/components")
-async def get_analysis_components(analysis_id: str):
+async def get_analysis_components(
+    analysis_id: str,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
     Get available components for an analysis
     """
-    analysis = report_structure_service.get_analysis(analysis_id)
+    analysis = await db_service.get_analysis(analysis_id)
 
     if not analysis:
         raise HTTPException(404, f"Analysis {analysis_id} not found")
 
-    components = analysis["metadata"].get("components", {})
+    components = analysis.get("components", {})
 
     return {
         "analysis_id": analysis_id,
@@ -74,178 +95,119 @@ async def get_analysis_components(analysis_id: str):
 
 
 @router.get("/{analysis_id}/cape")
-async def get_cape_report(analysis_id: str):
+async def get_cape_report(
+    analysis_id: str,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
-    Get CAPE raw report
+    Get CAPE raw report from database
     """
-    analysis = report_structure_service.get_analysis(analysis_id)
+    cape_result = await db_service.get_cape_results(analysis_id)
 
-    if not analysis or "cape" not in analysis:
+    if not cape_result:
         raise HTTPException(404, f"CAPE report not found for {analysis_id}")
 
-    return {"analysis_id": analysis_id, "type": "cape_raw", "data": analysis["cape"]}
+    return {
+        "analysis_id": analysis_id,
+        "type": "cape_raw",
+        "data": cape_result.get("data", {}),
+        "created_at": cape_result.get("created_at"),
+    }
 
 
-@router.get("/{analysis_id}/parsed/{section_name}")
-async def get_parsed_section(analysis_id: str, section_name: str = "all"):
+@router.get("/{analysis_id}/parsed")
+async def get_parsed_results(
+    analysis_id: str,
+    section: str = Query(None, description="Specific section name, or None for all"),
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
-    Get specific parsed section or all sections
+    Get parsed results from database.
+    Optionally specify a section name to get only that section.
     """
-    analysis = report_structure_service.get_analysis(analysis_id)
+    parsed_result = await db_service.get_parsed_results(analysis_id)
 
-    if not analysis or "parsed" not in analysis:
+    if not parsed_result:
         raise HTTPException(404, f"Parsed data not found for {analysis_id}")
 
-    if section_name == "all":
-        return {
-            "analysis_id": analysis_id,
-            "type": "parsed_all",
-            "data": analysis["parsed"],
-        }
-    else:
-        sections = analysis["parsed"].get("sections", {})
-        if section_name not in sections:
-            raise HTTPException(404, f"Section {section_name} not found")
+    if section:
+        sections = parsed_result.get("sections", {})
+        if section not in sections:
+            raise HTTPException(404, f"Section {section} not found")
 
         return {
             "analysis_id": analysis_id,
             "type": "parsed_section",
-            "section": section_name,
-            "data": sections[section_name],
+            "section": section,
+            "data": sections[section],
+        }
+
+    return {
+        "analysis_id": analysis_id,
+        "type": "parsed_all",
+        "data": parsed_result,
+    }
+
+
+@router.get("/{analysis_id}/ai")
+async def get_ai_results(
+    analysis_id: str,
+    section: str = Query(None, description="Specific section name, or None for all"),
+    db_service: DatabaseService = Depends(get_db_service),
+):
+    """
+    Get AI analysis results from database.
+    Optionally specify a section name to get only that section.
+    """
+    ai_result = await db_service.get_ai_results(analysis_id)
+
+    if not ai_result:
+        raise HTTPException(404, f"AI analysis not found for {analysis_id}")
+
+    if section:
+        results = ai_result.get("results", {})
+        if section not in results:
+            raise HTTPException(404, f"AI section {section} not found")
+
+        return {
+            "analysis_id": analysis_id,
+            "type": "ai_section",
+            "section": section,
+            "data": results[section],
+            "created_at": ai_result.get("created_at"),
+        }
+    else:
+        return {
+            "analysis_id": analysis_id,
+            "type": "ai_all",
+            "data": {
+                "results": ai_result.get("results", {}),
+                "sections_analyzed": ai_result.get("sections_analyzed", []),
+                "model_usage": ai_result.get("model_usage", {}),
+                "duration_seconds": ai_result.get("duration_seconds", 0),
+                "timestamp": ai_result.get("timestamp"),
+            },
+            "created_at": ai_result.get("created_at"),
         }
 
 
-@router.get("/{analysis_id}/ai/{section_name}")
-async def get_ai_section(analysis_id: str, section_name: str = "summary"):
-    """
-    Get specific AI analysis section or summary.
-    When section_name='summary', combines all AI analysis files into a single response.
-    """
-    try:
-        analysis = report_structure_service.get_analysis(analysis_id)
-
-        if not analysis or "ai_analysis" not in analysis:
-            raise HTTPException(404, f"AI analysis not found for {analysis_id}")
-
-        if section_name == "summary":
-            summary_file = (
-                report_structure_service.base_dir
-                / analysis_id
-                / "ai_analysis"
-                / "summary.json"
-            )
-            if not summary_file.exists():
-                raise HTTPException(404, f"AI summary not found for {analysis_id}")
-
-            summary_data = report_structure_service.load_json(summary_file)
-
-            model_usage_file = (
-                report_structure_service.base_dir
-                / analysis_id
-                / "ai_analysis"
-                / "model_usage.json"
-            )
-            model_usage_data = {}
-            if model_usage_file.exists():
-                model_usage_data = report_structure_service.load_json(model_usage_file)
-
-            ai_dir = (
-                report_structure_service.base_dir
-                / analysis_id
-                / "ai_analysis"
-                / "sections"
-            )
-            sections_data = {}
-            sections_analyzed = []
-
-            if ai_dir.exists() and ai_dir.is_dir():
-                for section_file in ai_dir.glob("*.json"):
-                    section_name_key = section_file.stem
-                    section_data = report_structure_service.load_json(section_file)
-                    sections_data[section_name_key] = section_data
-                    sections_analyzed.append(section_name_key)
-
-            combined_data = {
-                **summary_data,
-                "model_usage": model_usage_data,
-                "sections": sections_data,
-                "sections_analyzed": sections_analyzed,
-                "results": {},
-                "duration_seconds": summary_data.get("duration_seconds", 0),
-                "timestamp": summary_data.get("timestamp", datetime.now().isoformat()),
-            }
-
-            for section_name_key, section_data in sections_data.items():
-                if "analysis" in section_data:
-                    if section_name_key == "final_synthesis":
-                        combined_data["results"]["final_synthesis"] = section_data[
-                            "analysis"
-                        ]
-                    else:
-                        combined_data["results"][section_name_key] = section_data[
-                            "analysis"
-                        ]
-
-            if (
-                "final_synthesis" not in combined_data["results"]
-                and "final_synthesis" in sections_data
-            ):
-                if "analysis" in sections_data["final_synthesis"]:
-                    combined_data["results"]["final_synthesis"] = sections_data[
-                        "final_synthesis"
-                    ]["analysis"]
-
-            for section_name_key, section_data in sections_data.items():
-                if "analysis" in section_data:
-                    combined_data[section_name_key] = section_data["analysis"]
-
-            return {
-                "analysis_id": analysis_id,
-                "type": "ai_summary",
-                "data": combined_data,
-            }
-        else:
-            ai_dir = (
-                report_structure_service.base_dir
-                / analysis_id
-                / "ai_analysis"
-                / "sections"
-            )
-            section_file = ai_dir / f"{section_name}.json"
-
-            if not section_file.exists():
-                raise HTTPException(404, f"AI section {section_name} not found")
-
-            data = report_structure_service.load_json(section_file)
-
-            return {
-                "analysis_id": analysis_id,
-                "type": "ai_section",
-                "section": section_name,
-                "data": data,
-            }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error loading AI section {section_name} for {analysis_id}: {str(e)}")
-        raise HTTPException(500, f"Failed to load AI analysis: {str(e)}") from e
-
-
 @router.delete("/{analysis_id}")
-async def delete_analysis(analysis_id: str):
+async def delete_analysis(
+    analysis_id: str,
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
-    Delete an analysis.
+    Delete an analysis and all related data from database.
     """
     try:
-        deleted = report_structure_service.delete_analysis(analysis_id)
+        deleted = await db_service.delete_analysis(analysis_id)
 
         if not deleted:
             raise HTTPException(404, f"Analysis {analysis_id} not found")
 
         return {
             "status": "success",
-            "message": f"Analysis {analysis_id} deleted successfully",
+            "message": f"Analysis {analysis_id} and related data deleted successfully",
         }
 
     except HTTPException:
@@ -255,18 +217,27 @@ async def delete_analysis(analysis_id: str):
 
 
 @router.get("/{analysis_id}/download")
-async def download_report(analysis_id: str, format: str = "json"):
+async def download_report(
+    analysis_id: str,
+    format: str = Query("json", regex="^(json)$"),
+    include_all: bool = Query(True, description="Include all components"),
+    db_service: DatabaseService = Depends(get_db_service),
+):
     """
-    Download analysis report.
+    Download complete analysis report from database.
     """
     try:
-        analysis = report_structure_service.get_analysis(analysis_id)
+        if include_all:
+            result = await db_service.get_complete_analysis(analysis_id)
+        else:
+            analysis = await db_service.get_analysis(analysis_id)
+            result = {"analysis": analysis}
 
-        if not analysis:
+        if not result:
             raise HTTPException(404, f"Analysis {analysis_id} not found")
 
         if format.lower() == "json":
-            return analysis
+            return result
 
         raise HTTPException(501, f"Format {format} not yet supported")
 

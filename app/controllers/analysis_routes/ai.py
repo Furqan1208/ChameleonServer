@@ -7,14 +7,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.controllers.analysis_routes.dependencies import (
-    get_ai_analysis_service,
-    get_parser_service,
-)
-from app.controllers.analysis_routes.utils import calculate_malscore
 from app.services.ai_analysis_service import AIAnalysisService
+from app.services.database_service import DatabaseService
 from app.services.parser_service import ParserService
 from app.services.report_structure_service import report_structure_service
+
+from .dependencies import get_ai_analysis_service, get_db_service, get_parser_service
+from .utils import calculate_malscore
 
 router = APIRouter()
 
@@ -27,9 +26,11 @@ async def ai_only_analysis(
     max_parallel_sections: int = 4,
     parser_service: ParserService = Depends(get_parser_service),
     ai_analysis_service: AIAnalysisService = Depends(get_ai_analysis_service),
+    db_service: DatabaseService = Depends(get_db_service),
 ):
     """
     AI analysis on already parsed data
+    Stores results in MongoDB with shared analysis_id
     """
     analysis_id = str(uuid.uuid4())
     temp_files = []
@@ -47,6 +48,13 @@ async def ai_only_analysis(
         print(f"Parallel Mode: {'Enabled' if enable_parallel else 'Disabled'}")
         print(f"{'=' * 70}\n")
 
+        await db_service.create_analysis_record(
+            analysis_id=analysis_id,
+            filename=file.filename,
+            analysis_type="ai_only",
+            model_name=model_name,
+        )
+
         structure = report_structure_service.create_analysis_structure(
             analysis_id, file.filename
         )
@@ -61,13 +69,20 @@ async def ai_only_analysis(
             parsed_data = json.load(f)
 
         if "sections" not in parsed_data or "metadata" not in parsed_data:
+            await db_service.update_analysis_status(
+                analysis_id, "failed", error="Invalid parsed data format"
+            )
             raise HTTPException(
                 400, "File must be in parsed format (with 'sections' and 'metadata')"
             )
 
-        report_structure_service.save_parsed_report(analysis_id, parsed_data)
+        await db_service.save_parsed_results(analysis_id, parsed_data)
         sections_parsed = parsed_data["metadata"]["sections_parsed"]
-        print(f"✅ Parsed data loaded ({len(sections_parsed)} sections)")
+        print(
+            f"✅ Parsed data loaded and saved to database ({len(sections_parsed)} sections)"
+        )
+
+        report_structure_service.save_parsed_report(analysis_id, parsed_data)
 
         print("\n🤖 STEP 1: AI Analysis...")
         print("-" * 70)
@@ -78,13 +93,21 @@ async def ai_only_analysis(
             max_parallel_sections=max_parallel_sections,
         )
 
-        ai_files = report_structure_service.save_ai_analysis(
-            analysis_id, ai_analysis_result
-        )
-        ai_sections = ai_analysis_result.get("sections_analyzed", [])
-        print(f"✅ AI analysis of {len(ai_sections)} sections completed")
-
         malscore = calculate_malscore(parsed_data, ai_analysis_result)
+
+        await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)
+        ai_sections = ai_analysis_result.get("sections_analyzed", [])
+        print(f"✅ AI analysis of {len(ai_sections)} sections saved to database")
+
+        report_structure_service.save_ai_analysis(analysis_id, ai_analysis_result)
+
+        await db_service.update_analysis_status(
+            analysis_id,
+            "complete",
+            malscore=malscore,
+            sections_parsed=sections_parsed,
+            ai_sections_analyzed=ai_sections,
+        )
 
         report_structure_service._update_metadata(
             analysis_id,
@@ -104,18 +127,20 @@ async def ai_only_analysis(
         print(f"{'=' * 70}")
         print(f"Analysis ID: {analysis_id}")
         print(f"Threat Score: {malscore:.1f}/10")
-        print(f"Report Path: {structure['root']}")
+        print("Stored in Database: MongoDB")
+        print(f"Backup Path: {structure['root']}")
         print(f"{'=' * 70}\n")
 
         return {
             "analysis_id": analysis_id,
             "filename": file.filename,
             "status": "complete",
-            "message": "AI analysis completed successfully",
+            "message": "AI analysis completed successfully and stored in database",
             "components": ["parsed", "ai_analysis"],
             "malscore": malscore,
             "created_at": datetime.now().isoformat(),
-            "report_path": str(structure["root"]),
+            "storage": "mongodb",
+            "backup_path": str(structure["root"]),
             "sections_parsed": sections_parsed,
             "ai_sections_analyzed": ai_sections,
         }
@@ -124,7 +149,8 @@ async def ai_only_analysis(
         raise
     except Exception as e:
         print(f"\n❌ AI analysis failed: {str(e)}")
-        raise HTTPException(500, f"AI analysis failed: {str(e)}")
+        await db_service.update_analysis_status(analysis_id, "failed", error=str(e))
+        raise HTTPException(500, f"AI analysis failed: {str(e)}") from e
     finally:
         for temp_file in temp_files:
             try:

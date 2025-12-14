@@ -39,8 +39,7 @@ class CapeAnalysisService:
             form_data.add_field("file", data, filename=file.filename)
 
             async with session.post(url, headers=headers, data=form_data) as resp:
-                text = await resp.text()
-                print("Status:", resp.status, "Response:", text)
+                print("Status:", resp.status)
 
                 if resp.status != 200:
                     return None
