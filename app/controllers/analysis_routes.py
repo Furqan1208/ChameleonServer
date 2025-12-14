@@ -652,35 +652,100 @@ async def get_parsed_section(analysis_id: str, section_name: str = "all"):
 @router.get("/{analysis_id}/ai/{section_name}")
 async def get_ai_section(analysis_id: str, section_name: str = "summary"):
     """
-    Get specific AI analysis section or summary
+    Get specific AI analysis section or summary.
+    When section_name='summary', combines all AI analysis files into a single response.
     """
-    analysis = report_structure_service.get_analysis(analysis_id)
-    
-    if not analysis or "ai_analysis" not in analysis:
-        raise HTTPException(404, f"AI analysis not found for {analysis_id}")
-    
-    if section_name == "summary":
-        return {
-            "analysis_id": analysis_id,
-            "type": "ai_summary",
-            "data": analysis["ai_analysis"]
-        }
-    else:
-        # For individual AI sections, load from file system
-        ai_dir = report_structure_service.base_dir / analysis_id / "ai_analysis" / "sections"
-        section_file = ai_dir / f"{section_name}.json"
+    try:
+        # Check if analysis exists
+        analysis = report_structure_service.get_analysis(analysis_id)
         
-        if not section_file.exists():
-            raise HTTPException(404, f"AI section {section_name} not found")
+        if not analysis or "ai_analysis" not in analysis:
+            raise HTTPException(404, f"AI analysis not found for {analysis_id}")
         
-        data = report_structure_service.load_json(section_file)
-        
-        return {
-            "analysis_id": analysis_id,
-            "type": "ai_section",
-            "section": section_name,
-            "data": data
-        }
+        if section_name == "summary":
+            # Load the base summary
+            summary_file = report_structure_service.base_dir / analysis_id / "ai_analysis" / "summary.json"
+            if not summary_file.exists():
+                raise HTTPException(404, f"AI summary not found for {analysis_id}")
+            
+            summary_data = report_structure_service.load_json(summary_file)
+            
+            # Load model usage
+            model_usage_file = report_structure_service.base_dir / analysis_id / "ai_analysis" / "model_usage.json"
+            model_usage_data = {}
+            if model_usage_file.exists():
+                model_usage_data = report_structure_service.load_json(model_usage_file)
+            
+            # Load all section files
+            ai_dir = report_structure_service.base_dir / analysis_id / "ai_analysis" / "sections"
+            sections_data = {}
+            sections_analyzed = []
+            
+            if ai_dir.exists() and ai_dir.is_dir():
+                for section_file in ai_dir.glob("*.json"):
+                    section_name_key = section_file.stem
+                    section_data = report_structure_service.load_json(section_file)
+                    sections_data[section_name_key] = section_data
+                    sections_analyzed.append(section_name_key)
+            
+            # Combine all data into a single structure
+            combined_data = {
+                **summary_data,
+                "model_usage": model_usage_data,
+                "sections": sections_data,
+                "sections_analyzed": sections_analyzed,
+                "results": {},  # Structure for frontend compatibility
+                "duration_seconds": summary_data.get("duration_seconds", 0),
+                "timestamp": summary_data.get("timestamp", datetime.now().isoformat())
+            }
+            
+            # Create results structure expected by frontend
+            for section_name_key, section_data in sections_data.items():
+                if "analysis" in section_data:
+                    # For final_synthesis, include the entire analysis
+                    if section_name_key == "final_synthesis":
+                        combined_data["results"]["final_synthesis"] = section_data["analysis"]
+                    else:
+                        # For other sections, include just the analysis
+                        combined_data["results"][section_name_key] = section_data["analysis"]
+            
+            # If no final_synthesis in results, try to extract from sections
+            if "final_synthesis" not in combined_data["results"] and "final_synthesis" in sections_data:
+                if "analysis" in sections_data["final_synthesis"]:
+                    combined_data["results"]["final_synthesis"] = sections_data["final_synthesis"]["analysis"]
+            
+            # Also include the analysis directly at root for sections that have it
+            for section_name_key, section_data in sections_data.items():
+                if "analysis" in section_data:
+                    combined_data[section_name_key] = section_data["analysis"]
+            
+            return {
+                "analysis_id": analysis_id,
+                "type": "ai_summary",
+                "data": combined_data
+            }
+        else:
+            # For individual AI sections
+            ai_dir = report_structure_service.base_dir / analysis_id / "ai_analysis" / "sections"
+            section_file = ai_dir / f"{section_name}.json"
+            
+            if not section_file.exists():
+                raise HTTPException(404, f"AI section {section_name} not found")
+            
+            data = report_structure_service.load_json(section_file)
+            
+            return {
+                "analysis_id": analysis_id,
+                "type": "ai_section",
+                "section": section_name,
+                "data": data
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error loading AI section {section_name} for {analysis_id}: {str(e)}")
+        raise HTTPException(500, f"Failed to load AI analysis: {str(e)}")
 
 
 @router.delete("/{analysis_id}")
