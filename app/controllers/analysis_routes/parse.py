@@ -216,7 +216,7 @@ async def parse_and_ai_analysis(
             max_parallel_sections=max_parallel_sections,
         )
 
-        malscore = sections_parsed["signatures"]["malscore"]
+        malscore = parsed_results["sections"]["signatures"]["malscore"]
 
         # Save to database
         await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)

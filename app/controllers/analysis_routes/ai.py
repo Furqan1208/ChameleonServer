@@ -92,7 +92,7 @@ async def ai_only_analysis(
             max_parallel_sections=max_parallel_sections,
         )
 
-        malscore = sections_parsed["signatures"]["malscore"]
+        malscore = parsed_data["sections"]["signatures"]["malscore"]
 
         await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)
         ai_sections = ai_analysis_result.get("sections_analyzed", [])
