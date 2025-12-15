@@ -300,7 +300,7 @@ class ModelService:
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.9,
+                        temperature=0.2,
                         max_output_tokens=8192,
                     ),
                 )
@@ -352,7 +352,7 @@ class ModelService:
                         model=model_name,
                         contents=prompt,
                         config=types.GenerateContentConfig(
-                            temperature=0.9,
+                            temperature=0.2,
                             max_output_tokens=8192,
                         ),
                     )
