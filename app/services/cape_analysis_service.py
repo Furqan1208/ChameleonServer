@@ -34,9 +34,12 @@ class CapeAnalysisService:
 
         data = await file.read()
 
+        cape_options = "procmemdump=1,amsi=yes,unpack=yes,enforce_timeout=yes,thread_monitor=yes,unpacker=2"
+
         async with aiohttp.ClientSession() as session:
             form_data = aiohttp.FormData()
             form_data.add_field("file", data, filename=file.filename)
+            form_data.add_field("options", cape_options)
 
             async with session.post(url, headers=headers, data=form_data) as resp:
                 print("Status:", resp.status)
