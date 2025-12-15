@@ -14,7 +14,6 @@ from app.services.parser_service import ParserService
 from app.services.report_structure_service import report_structure_service
 
 from .dependencies import get_ai_analysis_service, get_db_service, get_parser_service
-from .utils import calculate_malscore
 
 router = APIRouter()
 
@@ -217,8 +216,7 @@ async def parse_and_ai_analysis(
             max_parallel_sections=max_parallel_sections,
         )
 
-        # Calculate malscore
-        malscore = calculate_malscore(parsed_results, ai_analysis_result)
+        malscore = sections_parsed["signatures"]["malscore"]
 
         # Save to database
         await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)

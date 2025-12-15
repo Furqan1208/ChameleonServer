@@ -13,7 +13,6 @@ from app.services.parser_service import ParserService
 from app.services.report_structure_service import report_structure_service
 
 from .dependencies import get_ai_analysis_service, get_db_service, get_parser_service
-from .utils import calculate_malscore
 
 router = APIRouter()
 
@@ -93,7 +92,7 @@ async def ai_only_analysis(
             max_parallel_sections=max_parallel_sections,
         )
 
-        malscore = calculate_malscore(parsed_data, ai_analysis_result)
+        malscore = sections_parsed["signatures"]["malscore"]
 
         await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)
         ai_sections = ai_analysis_result.get("sections_analyzed", [])
