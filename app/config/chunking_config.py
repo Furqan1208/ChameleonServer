@@ -23,7 +23,7 @@ class SectionChunkConfig:
     strings_chunk_size: int = 2000
     strings_max_tokens: int = 6000
 
-    memory_chunk_size: int = 10
+    memory_chunk_size: int = 1000
     memory_max_tokens: int = 4000
 
 
