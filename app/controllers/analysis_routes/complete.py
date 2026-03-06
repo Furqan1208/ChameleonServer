@@ -1,4 +1,3 @@
-# D:\FYP\ChameleonServer\app\controllers\analysis_routes\complete.py
 import json
 import uuid
 from datetime import datetime
@@ -17,6 +16,7 @@ from app.services.report_structure_service import report_structure_service
 from .dependencies import (
     get_ai_analysis_service,
     get_analysis_service,
+    get_current_user_id,
     get_db_service,
     get_parser_service,
 )
@@ -30,6 +30,7 @@ async def complete_analysis(
     model_name: Optional[str] = "gemini-2.5-flash",
     enable_parallel: bool = True,
     max_parallel_sections: int = 4,
+    user_id: str = Depends(get_current_user_id),
     analysis_service: CapeAnalysisService = Depends(get_analysis_service),
     parser_service: ParserService = Depends(get_parser_service),
     ai_analysis_service: AIAnalysisService = Depends(get_ai_analysis_service),
@@ -37,7 +38,9 @@ async def complete_analysis(
 ):
     """
     Complete malware analysis: File → CAPE → Parse → AI
-    Stores all results in MongoDB with shared analysis_id
+    Stores all results in MongoDB with shared analysis_id, scoped to current user.
+    Auth is verified once by the parent router — user object is reused here via
+    FastAPI's dependency caching (no extra DB call).
     """
     analysis_id = str(uuid.uuid4())
     temp_files = []
@@ -48,12 +51,14 @@ async def complete_analysis(
         print(f"{'=' * 70}")
         print(f"File: {file.filename}")
         print(f"Analysis ID: {analysis_id}")
+        print(f"User ID: {user_id}")
         print(f"AI Model: {model_name}")
         print(f"Parallel Mode: {'Enabled' if enable_parallel else 'Disabled'}")
         print(f"{'=' * 70}\n")
 
-        # Create initial analysis record in database
+        # Create initial analysis record in database, associated with user
         await db_service.create_analysis_record(
+            user_id=user_id,
             analysis_id=analysis_id,
             filename=file.filename or "unknown_file",
             analysis_type="complete",
@@ -68,16 +73,21 @@ async def complete_analysis(
         # 1. CAPE Analysis
         print("📊 STEP 1: CAPE Sandbox Analysis...")
         print("-" * 70)
-        cape_report = await analysis_service.upload_and_analyze(file)
+        cape_report = await analysis_service.upload_and_analyze(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            file=file,
+        )
 
         if not cape_report:
             await db_service.update_analysis_status(
-                analysis_id, "failed", error="CAPE analysis failed"
+                user_id=user_id,
+                analysis_id=analysis_id,
+                status="failed",
+                error="CAPE analysis failed",
             )
             raise HTTPException(500, "CAPE analysis failed - no report returned")
 
-        # Save to database
-        await db_service.save_cape_results(analysis_id, cape_report)
         print("✅ CAPE analysis saved to database")
 
         # Also save to file system (optional backup)
@@ -96,8 +106,11 @@ async def complete_analysis(
             temp_file_path, structure["parsed"]
         )
 
-        # Save to database
-        await db_service.save_parsed_results(analysis_id, parsed_results)
+        await db_service.save_parsed_results(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            parsed_data=parsed_results,
+        )
         sections_parsed = parsed_results["metadata"]["sections_parsed"]
         print(f"✅ Parsed {len(sections_parsed)} sections saved to database")
 
@@ -116,8 +129,12 @@ async def complete_analysis(
 
         malscore = parsed_results["sections"]["signatures"]["malscore"]
 
-        # Save to database
-        await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)
+        await db_service.save_ai_results(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            ai_data=ai_analysis_result,
+            malscore=malscore,
+        )
         print(
             f"✅ AI analysis of {len(ai_analysis_result.get('sections_analyzed', []))} sections saved to database"
         )
@@ -127,8 +144,9 @@ async def complete_analysis(
 
         # Update final status
         await db_service.update_analysis_status(
-            analysis_id,
-            "complete",
+            user_id=user_id,
+            analysis_id=analysis_id,
+            status="complete",
             malscore=malscore,
             sections_parsed=sections_parsed,
             ai_sections_analyzed=ai_analysis_result.get("sections_analyzed", []),
@@ -175,7 +193,12 @@ async def complete_analysis(
         raise
     except Exception as e:
         print(f"\n❌ Analysis failed: {str(e)}")
-        await db_service.update_analysis_status(analysis_id, "failed", error=str(e))
+        await db_service.update_analysis_status(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            status="failed",
+            error=str(e),
+        )
         import traceback
 
         traceback.print_exc()

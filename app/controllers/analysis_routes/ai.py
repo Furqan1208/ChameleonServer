@@ -1,3 +1,4 @@
+# D:\FYP\ChameleonServer\app\controllers\analysis_routes\ai.py
 import json
 import uuid
 from datetime import datetime
@@ -12,7 +13,12 @@ from app.services.database_service import DatabaseService
 from app.services.parser_service import ParserService
 from app.services.report_structure_service import report_structure_service
 
-from .dependencies import get_ai_analysis_service, get_db_service, get_parser_service
+from .dependencies import (
+    get_ai_analysis_service,
+    get_current_user_id,
+    get_db_service,
+    get_parser_service,
+)
 
 router = APIRouter()
 
@@ -23,13 +29,14 @@ async def ai_only_analysis(
     model_name: Optional[str] = "gemini-2.5-flash",
     enable_parallel: bool = True,
     max_parallel_sections: int = 4,
+    user_id: str = Depends(get_current_user_id),
     parser_service: ParserService = Depends(get_parser_service),
     ai_analysis_service: AIAnalysisService = Depends(get_ai_analysis_service),
     db_service: DatabaseService = Depends(get_db_service),
 ):
     """
-    AI analysis on already parsed data
-    Stores results in MongoDB with shared analysis_id
+    AI analysis on already parsed data.
+    Stores results in MongoDB with shared analysis_id, scoped to current user.
     """
     analysis_id = str(uuid.uuid4())
     temp_files = []
@@ -43,11 +50,13 @@ async def ai_only_analysis(
         print(f"{'=' * 70}")
         print(f"File: {file.filename}")
         print(f"Analysis ID: {analysis_id}")
+        print(f"User ID: {user_id}")
         print(f"AI Model: {model_name}")
         print(f"Parallel Mode: {'Enabled' if enable_parallel else 'Disabled'}")
         print(f"{'=' * 70}\n")
 
         await db_service.create_analysis_record(
+            user_id,
             analysis_id=analysis_id,
             filename=file.filename,
             analysis_type="ai_only",
@@ -69,13 +78,20 @@ async def ai_only_analysis(
 
         if "sections" not in parsed_data or "metadata" not in parsed_data:
             await db_service.update_analysis_status(
-                analysis_id, "failed", error="Invalid parsed data format"
+                user_id=user_id,
+                analysis_id=analysis_id,
+                status="failed",
+                error="Invalid parsed data format",
             )
             raise HTTPException(
                 400, "File must be in parsed format (with 'sections' and 'metadata')"
             )
 
-        await db_service.save_parsed_results(analysis_id, parsed_data)
+        await db_service.save_parsed_results(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            parsed_data=parsed_data,
+        )
         sections_parsed = parsed_data["metadata"]["sections_parsed"]
         print(
             f"✅ Parsed data loaded and saved to database ({len(sections_parsed)} sections)"
@@ -94,15 +110,21 @@ async def ai_only_analysis(
 
         malscore = parsed_data["sections"]["signatures"]["malscore"]
 
-        await db_service.save_ai_results(analysis_id, ai_analysis_result, malscore)
+        await db_service.save_ai_results(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            ai_data=ai_analysis_result,
+            malscore=malscore,
+        )
         ai_sections = ai_analysis_result.get("sections_analyzed", [])
         print(f"✅ AI analysis of {len(ai_sections)} sections saved to database")
 
         report_structure_service.save_ai_analysis(analysis_id, ai_analysis_result)
 
         await db_service.update_analysis_status(
-            analysis_id,
-            "complete",
+            user_id=user_id,
+            analysis_id=analysis_id,
+            status="complete",
             malscore=malscore,
             sections_parsed=sections_parsed,
             ai_sections_analyzed=ai_sections,
@@ -148,7 +170,12 @@ async def ai_only_analysis(
         raise
     except Exception as e:
         print(f"\n❌ AI analysis failed: {str(e)}")
-        await db_service.update_analysis_status(analysis_id, "failed", error=str(e))
+        await db_service.update_analysis_status(
+            user_id=user_id,
+            analysis_id=analysis_id,
+            status="failed",
+            error=str(e),
+        )
         raise HTTPException(500, f"AI analysis failed: {str(e)}") from e
     finally:
         for temp_file in temp_files:

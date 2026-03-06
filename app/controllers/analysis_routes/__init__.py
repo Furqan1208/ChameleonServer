@@ -11,7 +11,7 @@ router = APIRouter(
     prefix="/analysis",
     tags=["analysis"],
     responses={404: {"description": "Not found"}},
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(get_current_user)],  # auth guard only — result discarded
 )
 
 router.include_router(complete_router)
