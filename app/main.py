@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.controllers.analysis_routes import router as analysis_router
 from app.controllers.auth_routes import router as auth_router
+from app.controllers.threat_intel_routes import router as threat_intel_router
 from app.controllers.user_routes import router as user_router
 from app.database.mongodb import lifespan
 
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(analysis_router)
+app.include_router(threat_intel_router)
 
 
 @app.get("/")
