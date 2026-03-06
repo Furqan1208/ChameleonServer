@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
@@ -15,15 +16,33 @@ class DatabaseService:
         self.ai_collection = db["ai_results"]
         self.analyses_collection = db["analyses"]
 
+    # -------------------------------------------------------------------------
+    # Private Helpers
+    # -------------------------------------------------------------------------
+
+    async def _verify_ownership(self, user_id: str, analysis_id: str) -> bool:
+        """Verify that the analysis belongs to the given user"""
+        record = await self.analyses_collection.find_one(
+            {"analysis_id": analysis_id, "user_id": ObjectId(user_id)},
+            {"_id": 1},  # minimal projection
+        )
+        return record is not None
+
+    # -------------------------------------------------------------------------
+    # Write Operations
+    # -------------------------------------------------------------------------
+
     async def create_analysis_record(
         self,
+        user_id: str,
         analysis_id: str,
         filename: str,
         analysis_type: str,
         model_name: Optional[str] = None,
     ) -> dict:
-        """Create initial analysis record"""
+        """Create initial analysis record associated with a user"""
         record = {
+            "user_id": ObjectId(user_id),
             "analysis_id": analysis_id,
             "filename": filename,
             "analysis_type": analysis_type,
@@ -37,9 +56,14 @@ class DatabaseService:
         await self.analyses_collection.insert_one(record)
         return record
 
-    async def save_cape_results(self, analysis_id: str, cape_data: dict) -> bool:
+    async def save_cape_results(
+        self, user_id: str, analysis_id: str, cape_data: dict
+    ) -> bool:
         """Save CAPE analysis results"""
         try:
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
             document = {
                 "analysis_id": analysis_id,
                 "data": cape_data,
@@ -48,7 +72,6 @@ class DatabaseService:
 
             await self.cape_collection.insert_one(document)
 
-            # Update analysis record
             await self.analyses_collection.update_one(
                 {"analysis_id": analysis_id},
                 {"$set": {"components.cape": True, "updated_at": datetime.now()}},
@@ -59,9 +82,14 @@ class DatabaseService:
             print(f"Error saving CAPE results: {str(e)}")
             return False
 
-    async def save_parsed_results(self, analysis_id: str, parsed_data: dict) -> bool:
+    async def save_parsed_results(
+        self, user_id: str, analysis_id: str, parsed_data: dict
+    ) -> bool:
         """Save parsed results"""
         try:
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
             document = {
                 "analysis_id": analysis_id,
                 "metadata": parsed_data.get("metadata", {}),
@@ -71,7 +99,6 @@ class DatabaseService:
 
             await self.parsed_collection.insert_one(document)
 
-            # Update analysis record
             await self.analyses_collection.update_one(
                 {"analysis_id": analysis_id},
                 {
@@ -91,10 +118,17 @@ class DatabaseService:
             return False
 
     async def save_ai_results(
-        self, analysis_id: str, ai_data: dict, malscore: Optional[float] = None
+        self,
+        user_id: str,
+        analysis_id: str,
+        ai_data: dict,
+        malscore: Optional[float] = None,
     ) -> bool:
         """Save AI analysis results"""
         try:
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
             document = {
                 "analysis_id": analysis_id,
                 "results": ai_data.get("results", {}),
@@ -107,7 +141,6 @@ class DatabaseService:
 
             await self.ai_collection.insert_one(document)
 
-            # Update analysis record
             update_data = {
                 "components.ai_analysis": True,
                 "ai_sections_analyzed": ai_data.get("sections_analyzed", []),
@@ -127,10 +160,13 @@ class DatabaseService:
             return False
 
     async def update_analysis_status(
-        self, analysis_id: str, status: str, **kwargs
+        self, user_id: str, analysis_id: str, status: str, **kwargs
     ) -> bool:
         """Update analysis status and additional fields"""
         try:
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
             update_data = {"status": status, "updated_at": datetime.now(), **kwargs}
 
             if status == "complete":
@@ -145,49 +181,69 @@ class DatabaseService:
             print(f"Error updating analysis status: {str(e)}")
             return False
 
-    async def get_analysis(self, analysis_id: str) -> Optional[dict]:
-        """Get analysis record"""
+    # -------------------------------------------------------------------------
+    # Read Operations
+    # -------------------------------------------------------------------------
+
+    async def get_analysis(self, user_id: str, analysis_id: str) -> Optional[dict]:
+        """Get analysis record, scoped to user"""
         record = await self.analyses_collection.find_one(
-            {"analysis_id": analysis_id}, {"_id": 0}
+            {"analysis_id": analysis_id, "user_id": ObjectId(user_id)},
+            {"_id": 0, "user_id": 0},  # exclude internal fields from response
         )
         return record
 
-    async def get_cape_results(self, analysis_id: str) -> Optional[dict]:
-        """Get CAPE results"""
-        result = await self.cape_collection.find_one(
+    async def get_cape_results(self, user_id: str, analysis_id: str) -> Optional[dict]:
+        """Get CAPE results, ownership verified via analyses collection"""
+        if not await self._verify_ownership(user_id, analysis_id):
+            return None
+
+        return await self.cape_collection.find_one(
             {"analysis_id": analysis_id}, {"_id": 0}
         )
-        return result
 
-    async def get_parsed_results(self, analysis_id: str) -> Optional[dict]:
-        """Get parsed results"""
-        result = await self.parsed_collection.find_one(
+    async def get_parsed_results(
+        self, user_id: str, analysis_id: str
+    ) -> Optional[dict]:
+        """Get parsed results, ownership verified via analyses collection"""
+        if not await self._verify_ownership(user_id, analysis_id):
+            return None
+
+        return await self.parsed_collection.find_one(
             {"analysis_id": analysis_id}, {"_id": 0}
         )
-        return result
 
-    async def get_ai_results(self, analysis_id: str) -> Optional[dict]:
-        """Get AI results"""
-        result = await self.ai_collection.find_one(
+    async def get_ai_results(self, user_id: str, analysis_id: str) -> Optional[dict]:
+        """Get AI results, ownership verified via analyses collection"""
+        if not await self._verify_ownership(user_id, analysis_id):
+            return None
+
+        return await self.ai_collection.find_one(
             {"analysis_id": analysis_id}, {"_id": 0}
         )
-        return result
 
-    async def get_all_analyses(self, limit: int = 100, skip: int = 0) -> list:
-        """Get all analyses with pagination"""
+    async def get_all_analyses(
+        self, user_id: str, limit: int = 100, skip: int = 0
+    ) -> list:
+        """Get all analyses for a specific user with pagination"""
         cursor = (
-            self.analyses_collection.find({}, {"_id": 0})
+            self.analyses_collection.find(
+                {"user_id": ObjectId(user_id)},
+                {"_id": 0, "user_id": 0},  # exclude internal fields from response
+            )
             .sort("created_at", -1)
             .skip(skip)
             .limit(limit)
         )
 
-        analyses = await cursor.to_list(length=limit)
-        return analyses
+        return await cursor.to_list(length=limit)
 
-    async def get_complete_analysis(self, analysis_id: str) -> Optional[dict]:
+    async def get_complete_analysis(
+        self, user_id: str, analysis_id: str
+    ) -> Optional[dict]:
         """Get complete analysis with all components"""
-        analysis = await self.get_analysis(analysis_id)
+        # Single ownership check — sub-fetches skip re-verification
+        analysis = await self.get_analysis(user_id, analysis_id)
 
         if not analysis:
             return None
@@ -199,21 +255,35 @@ class DatabaseService:
             "ai_analysis": None,
         }
 
-        if analysis.get("components", {}).get("cape"):
-            result["cape"] = await self.get_cape_results(analysis_id)
+        components = analysis.get("components", {})
 
-        if analysis.get("components", {}).get("parsed"):
-            result["parsed"] = await self.get_parsed_results(analysis_id)
+        if components.get("cape"):
+            result["cape"] = await self.cape_collection.find_one(
+                {"analysis_id": analysis_id}, {"_id": 0}
+            )
 
-        if analysis.get("components", {}).get("ai_analysis"):
-            result["ai_analysis"] = await self.get_ai_results(analysis_id)
+        if components.get("parsed"):
+            result["parsed"] = await self.parsed_collection.find_one(
+                {"analysis_id": analysis_id}, {"_id": 0}
+            )
+
+        if components.get("ai_analysis"):
+            result["ai_analysis"] = await self.ai_collection.find_one(
+                {"analysis_id": analysis_id}, {"_id": 0}
+            )
 
         return result
 
-    async def delete_analysis(self, analysis_id: str) -> bool:
+    # -------------------------------------------------------------------------
+    # Delete Operations
+    # -------------------------------------------------------------------------
+
+    async def delete_analysis(self, user_id: str, analysis_id: str) -> bool:
         """Delete analysis and all related data"""
         try:
-            # Delete from all collections
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
             await self.cape_collection.delete_one({"analysis_id": analysis_id})
             await self.parsed_collection.delete_one({"analysis_id": analysis_id})
             await self.ai_collection.delete_one({"analysis_id": analysis_id})
@@ -227,6 +297,12 @@ class DatabaseService:
             print(f"Error deleting analysis: {str(e)}")
             return False
 
-    async def get_analysis_count(self) -> int:
-        """Get total number of analyses"""
-        return await self.analyses_collection.count_documents({})
+    # -------------------------------------------------------------------------
+    # Aggregation Operations
+    # -------------------------------------------------------------------------
+
+    async def get_analysis_count(self, user_id: str) -> int:
+        """Get total number of analyses for a specific user"""
+        return await self.analyses_collection.count_documents(
+            {"user_id": ObjectId(user_id)}
+        )

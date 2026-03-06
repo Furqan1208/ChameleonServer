@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.dependencies.user_dependency import get_current_user
 
 from .ai import router as ai_router
 from .complete import router as complete_router
@@ -9,6 +11,7 @@ router = APIRouter(
     prefix="/analysis",
     tags=["analysis"],
     responses={404: {"description": "Not found"}},
+    dependencies=[Depends(get_current_user)],  # auth guard only — result discarded
 )
 
 router.include_router(complete_router)

@@ -5,17 +5,20 @@ from typing import Dict, Optional
 import aiohttp
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.services.database_service import DatabaseService
+
 
 class CapeAnalysisService:
     def __init__(self, database: AsyncIOMotorDatabase):
-        self.database = database
-        self.collection = database.malware_analysis
+        self.db_service = DatabaseService(database)
         self.cape_api = os.getenv("CAPE_API_URL")
         self.cape_api_token = os.getenv("CAPE_API_TOKEN")
         self.poll_interval = int(os.getenv("CAPE_POLL_INTERVAL", "10"))
         self.max_poll_attempts = int(os.getenv("CAPE_MAX_POLL", "30"))
 
-    async def upload_and_analyze(self, file) -> Optional[Dict]:
+    async def upload_and_analyze(
+        self, user_id: str, analysis_id: str, file
+    ) -> Optional[Dict]:
         """Upload file to CAPEv2 and retrieve final JSON analysis report."""
         task_id = await self._submit_file_to_cape(file)
         if not task_id:
@@ -23,9 +26,8 @@ class CapeAnalysisService:
 
         report = await self._poll_for_report(task_id)
         if report:
-            await self.collection.insert_one(
-                {"task_id": task_id, "file_name": file.filename, "report": report}
-            )
+            await self.db_service.save_cape_results(user_id, analysis_id, report)
+
         return report
 
     async def _submit_file_to_cape(self, file) -> Optional[int]:
@@ -98,28 +100,6 @@ class CapeAnalysisService:
         print("Max poll attempts reached.")
         return None
 
-    async def save_progressive_analysis(self, analysis_data: Dict) -> str:
-        """Save progressive analysis results to database"""
-        try:
-            result = await self.collection.insert_one(analysis_data)
-            return str(result.inserted_id)
-        except Exception as e:
-            print(f"Error saving progressive analysis: {e}")
-            raise
-
-    async def get_analysis_by_id(self, analysis_id: str) -> Optional[Dict]:
-        """Retrieve analysis by ID"""
-        try:
-            # This would need proper ObjectId conversion in a real implementation
-            analysis = await self.collection.find_one({"analysis_id": analysis_id})
-            return analysis
-        except Exception as e:
-            print(f"Error retrieving analysis: {e}")
-            return None
-
-    # async def parse_cape_report(self, report: Dict) -> Dict:
-    #     """
-    #     Placeholder for future parsing logic
-    #     This will extract meaningful info (TTPs, IOC, etc.)
-    #     """
-    #     return report
+    async def get_cape_results(self, user_id: str, analysis_id: str) -> Optional[Dict]:
+        """Retrieve CAPE results for a given analysis, scoped to user"""
+        return await self.db_service.get_cape_results(user_id, analysis_id)

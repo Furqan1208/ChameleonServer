@@ -1,87 +1,41 @@
-# Import necessary modules from Pydantic, typing, datetime, and bson.
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import Annotated, Optional
 
-from bson import ObjectId
-from pydantic import BaseModel, EmailStr, Field, root_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, EmailStr, Field
 
-
-# Custom type for MongoDB ObjectId that works with Pydantic v2.
-class PyObjectId(str):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    # Validator for ObjectId: accepts the value and context info.
-    @classmethod
-    def validate(cls, v, info):
-        # Check if the value is a valid ObjectId.
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        # Return the value as a string.
-        return str(v)
+PyObjectId = Annotated[str, BeforeValidator(str)]
 
 
-# Main Pydantic model for a user.
 class UserModel(BaseModel):
-    # MongoDB _id field mapped to "id" (alias "_id").
+    # Mapping MongoDB's "_id" to our "id" field
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    # Required user name field. If missing, we attempt to populate it from "username".
     name: str
-    # Email field with built-in email validation.
     email: EmailStr
-    # Optional profile picture URL.
+    google_id: str
     profile_picture: Optional[str] = None
-    # List of favorite PaperSummary ObjectIds; defaults to an empty list.
-    favorites: Optional[List[PyObjectId]] = Field(default_factory=list)
-    # Automatically set the creation timestamp.
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    # Optional field for the last update timestamp.
-    updated_at: Optional[datetime] = None
+    # utcnow() is deprecated in Python 3.12+, so we use timezone-aware datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    # Root validator to handle legacy documents.
-    @root_validator(pre=True)
-    def populate_name(cls, values):
-        # If "name" is not provided but "username" exists, use "username" as the name.
-        if "name" not in values and "username" in values:
-            values["name"] = values["username"]
-        return values
-
-    class Config:
-        # Allow using field names instead of aliases during population.
-        populate_by_name = True
-        # Schema example for documentation purposes.
-        json_schema_extra = {
-            "example": {
-                "name": "John Doe",
-                "email": "johndoe@example.com",
-                "profile_picture": "https://example.com/profile.jpg",
-                "favorites": [],
-                "created_at": "2023-01-01T00:00:00Z",
-                "updated_at": "2023-01-01T00:00:00Z",
-            }
-        }
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        from_attributes=True,
+    )
 
 
-# Model for creating a new user.
 class UserCreate(BaseModel):
-    # "name" is required when creating a user.
     name: str
-    # Email field for the new user.
     email: EmailStr
-    # Optional profile picture URL.
+    google_id: str
     profile_picture: Optional[str] = None
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "John Doe",
-                "email": "johndoe@example.com",
-                "profile_picture": "https://example.com/profile.jpg",
-            }
-        }
 
-
-# Model for updating an existing user. All fields are optional.
 class UserUpdate(BaseModel):
     name: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserModel

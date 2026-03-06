@@ -1,10 +1,9 @@
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.mongodb import get_database
-from app.models.user import UserCreate, UserModel, UserUpdate
+from app.dependencies.user_dependency import get_current_user
+from app.models.user import UserModel, UserUpdate
 from app.services.user_service import UserService
 
 router = APIRouter(
@@ -18,71 +17,47 @@ async def get_user_service(db: AsyncIOMotorDatabase = Depends(get_database)):
     return UserService(db)
 
 
-@router.get("/", response_model=List[UserModel])
-async def read_users(
-    skip: int = 0,
-    limit: int = 100,
+@router.get("/me", response_model=UserModel)
+async def read_current_user(
+    current_user: UserModel = Depends(get_current_user),
+):
+    return current_user
+
+
+@router.put("/me", response_model=UserModel)
+async def update_current_user(
+    user_update: UserUpdate,
+    current_user: UserModel = Depends(get_current_user),
     user_service: UserService = Depends(get_user_service),
 ):
-    """
-    Retrieve all users.
-    """
-    return await user_service.get_all_users(skip=skip, limit=limit)
-
-
-@router.get("/{user_id}", response_model=UserModel)
-async def read_user(
-    user_id: str, user_service: UserService = Depends(get_user_service)
-):
-    """
-    Retrieve a specific user by ID.
-    """
-    user = await user_service.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-
-@router.post("/", response_model=UserModel, status_code=status.HTTP_201_CREATED)
-async def create_user(
-    user: UserCreate, user_service: UserService = Depends(get_user_service)
-):
-    """
-    Create a new user.
-    """
-    # Check if user with the same email already exists
-    existing_user = await user_service.get_user_by_email(user.email)
-    if existing_user:
+    # This check satisfies Pylance regarding the Optional[str] type
+    if not current_user.id:
         raise HTTPException(
-            status_code=400, detail="User with this email already exists"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
         )
 
-    return await user_service.create_user(user)
+    # We can pass current_user.id directly because it's already a string
+    updated = await user_service.update_user(current_user.id, user_update)
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated
 
 
-@router.put("/{user_id}", response_model=UserModel)
-async def update_user(
-    user_id: str,
-    user_update: UserUpdate,
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(
+    current_user: UserModel = Depends(get_current_user),
     user_service: UserService = Depends(get_user_service),
 ):
-    """
-    Update an existing user.
-    """
-    updated_user = await user_service.update_user(user_id, user_update)
-    if updated_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return updated_user
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
 
+    success = await user_service.delete_user(current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found or already deleted")
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    user_id: str, user_service: UserService = Depends(get_user_service)
-):
-    """
-    Delete a user.
-    """
-    deleted = await user_service.delete_user(user_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="User not found")
     return None
