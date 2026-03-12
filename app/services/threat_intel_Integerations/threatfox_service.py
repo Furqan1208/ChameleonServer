@@ -11,7 +11,7 @@ class ThreatFoxService:
     Uses the same API key for both ThreatFox and URLhaus (abuse.ch ecosystem).
     """
 
-    BASE_URL = "https://threatfox-api.abuse.ch/api/v1"
+    BASE_URL = "https://threatfox-api.abuse.ch/api/v1/"
 
     def __init__(self):
         self.api_key = os.getenv("THREATFOX_API_KEY", "")
@@ -25,28 +25,52 @@ class ThreatFoxService:
             headers["Auth-Key"] = self.api_key
         return headers
 
+    @staticmethod
+    def _is_hash(value: str) -> bool:
+        s = (value or "").strip().lower()
+        return bool(len(s) in {32, 64} and all(c in "0123456789abcdef" for c in s))
+
+    def _build_search_payload(self, indicator: str) -> dict:
+        s = (indicator or "").strip()
+        if self._is_hash(s):
+            return {"query": "search_hash", "hash": s}
+        return {"query": "search_ioc", "search_term": s}
+
+    @staticmethod
+    def _error_response(indicator: str, message: str) -> dict:
+        return {
+            "ioc": indicator,
+            "found": False,
+            "threat_level": "unknown",
+            "query_status": "error",
+            "error": message,
+            "iocs": [],
+            "total": 0,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
     async def search_indicator(self, indicator: str) -> dict:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             try:
                 resp = await client.post(
                     self.BASE_URL,
                     headers=self._headers,
-                    json={"query": "search_ioc", "search_term": indicator},
+                    json=self._build_search_payload(indicator),
                 )
                 if resp.status_code == 429:
-                    raise RuntimeError("ThreatFox rate limit exceeded.")
+                    return self._error_response(indicator, "ThreatFox rate limit exceeded.")
                 if not resp.is_success:
-                    raise RuntimeError(f"ThreatFox API error {resp.status_code}")
+                    return self._error_response(
+                        indicator, f"ThreatFox API error {resp.status_code}"
+                    )
                 return self._parse_search(resp.json(), indicator)
-            except RuntimeError:
-                raise
             except httpx.TimeoutException:
-                raise RuntimeError("ThreatFox request timed out.")
+                return self._error_response(indicator, "ThreatFox request timed out.")
             except Exception as e:
-                raise RuntimeError(f"ThreatFox request failed: {e}")
+                return self._error_response(indicator, f"ThreatFox request failed: {e}")
 
     async def get_recent_iocs(self, days: int = 3, limit: int = 20) -> list:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             try:
                 resp = await client.post(
                     self.BASE_URL,
@@ -63,7 +87,7 @@ class ThreatFoxService:
                 return []
 
     async def get_malware_list(self) -> dict:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             try:
                 resp = await client.post(
                     self.BASE_URL,
@@ -84,7 +108,7 @@ class ThreatFoxService:
     def _parse_search(self, raw: dict, indicator: str) -> dict:
         query_status = raw.get("query_status", "")
         iocs = raw.get("data") or []
-        found = bool(iocs) and query_status != "no_result"
+        found = bool(iocs) and query_status == "ok"
 
         threat_level = "unknown"
         if found:

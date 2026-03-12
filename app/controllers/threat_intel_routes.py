@@ -17,6 +17,7 @@ from app.services.threat_intel_Integerations.malwarebazaar_service import (
     MalwareBazaarService,
 )
 from app.services.threat_intel_Integerations.threatfox_service import ThreatFoxService
+from app.services.threat_intel_Integerations.urlhaus_service import URLhausService
 from app.services.threat_intel_Integerations.unified_service import (
     UnifiedThreatIntelService,
 )
@@ -82,6 +83,10 @@ class HAScanRequest(BaseModel):
     include_summary: bool = True
 
 
+class URLhausRequest(BaseModel):
+    indicator: str
+
+
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
 
@@ -103,6 +108,10 @@ def get_abuseipdb_service() -> AbuseIPDBService:
 
 def get_threatfox_service() -> ThreatFoxService:
     return ThreatFoxService()
+
+
+def get_urlhaus_service() -> URLhausService:
+    return URLhausService()
 
 
 def get_unified_service() -> UnifiedThreatIntelService:
@@ -254,6 +263,76 @@ async def get_threatfox_malware_list(
 ):
     data = await svc.get_malware_list()
     return {"status": "success", "data": data}
+
+
+# ── URLhaus ───────────────────────────────────────────────────────────────────
+
+
+@router.post("/urlhaus/check")
+async def check_urlhaus(
+    request: URLhausRequest,
+    svc: URLhausService = Depends(get_urlhaus_service),
+):
+    """
+    Check an indicator in URLhaus (auto-detects type: url, hash, host, or tag)
+    """
+    try:
+        result = await svc.check_indicator(request.indicator)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/urlhaus/url")
+async def check_urlhaus_url(
+    request: URLhausRequest,
+    svc: URLhausService = Depends(get_urlhaus_service),
+):
+    """Check a URL in URLhaus"""
+    try:
+        result = await svc.check_url(request.indicator)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/urlhaus/hash")
+async def check_urlhaus_hash(
+    request: URLhausRequest,
+    svc: URLhausService = Depends(get_urlhaus_service),
+):
+    """Check a hash (payload) in URLhaus"""
+    try:
+        result = await svc.check_hash(request.indicator)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/urlhaus/host")
+async def check_urlhaus_host(
+    request: URLhausRequest,
+    svc: URLhausService = Depends(get_urlhaus_service),
+):
+    """Check a host in URLhaus"""
+    try:
+        result = await svc.check_host(request.indicator)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/urlhaus/tag")
+async def check_urlhaus_tag(
+    request: URLhausRequest,
+    svc: URLhausService = Depends(get_urlhaus_service),
+):
+    """Check a tag in URLhaus"""
+    try:
+        result = await svc.check_tag(request.indicator)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ── FileScan ──────────────────────────────────────────────────────────────────
@@ -463,6 +542,57 @@ async def ha_quick_scan_feed(
     try:
         result = await svc.get_quick_scan_feed(limit)
         return {"status": "success", "data": result}
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/hybrid-analysis/report/{report_id}/summary")
+async def ha_report_summary(
+    report_id: str,
+    svc: HybridAnalysisService = Depends(get_ha_service),
+):
+    """Fetch a detailed report summary by report/job ID."""
+    try:
+        result = await svc.get_report_summary(report_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/hybrid-analysis/report/{report_id}/state")
+async def ha_report_state(
+    report_id: str,
+    svc: HybridAnalysisService = Depends(get_ha_service),
+):
+    """Fetch report state by report/job ID."""
+    try:
+        result = await svc.get_report_state(report_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/hybrid-analysis/report/{report_id}")
+async def ha_report_details(
+    report_id: str,
+    svc: HybridAnalysisService = Depends(get_ha_service),
+):
+    """Fetch full report details by report/job ID."""
+    try:
+        result = await svc.get_report_details(report_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

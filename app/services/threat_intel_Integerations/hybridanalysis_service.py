@@ -1,7 +1,6 @@
 # app/services/threat_intel_Integerations/hybridanalysis_service.py
 import os
 import re
-import urllib.parse
 from datetime import datetime
 from typing import Optional
 
@@ -12,13 +11,11 @@ class HybridAnalysisService:
     """
     Hybrid Analysis integration.
 
-    Key fix: follow_redirects=True on the AsyncClient.
-    The HA API's POST /search/hash returns HTTP 301 → httpx would raise
-    by default. With follow_redirects the client follows through to the
-    actual JSON response.
+    Uses direct Hybrid Analysis v2 endpoints and normalises responses
+    for frontend components.
     """
 
-    BASE_URL = "https://www.hybrid-analysis.com/api/v2"
+    BASE_URL = "https://hybrid-analysis.com/api/v2"
 
     _VERDICT_MAP = {
         60: "malicious",
@@ -42,10 +39,9 @@ class HybridAnalysisService:
         }
 
     def _make_client(self) -> httpx.AsyncClient:
-        # follow_redirects=True is critical — HA /search/hash issues a 301
+        # Keep redirects disabled for POST to avoid dropping body on 301.
         return httpx.AsyncClient(
             timeout=30,
-            follow_redirects=True,
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -63,7 +59,8 @@ class HybridAnalysisService:
         self._validate_hash(indicator)
 
         async with self._make_client() as client:
-            search_data = await self._search_hash(client, indicator)
+            raw_search = await self._search_hash(client, indicator)
+            search_data = self._normalise_search_data(raw_search)
             if not search_data:
                 return self._not_found(indicator)
 
@@ -96,28 +93,43 @@ class HybridAnalysisService:
             return []
         return [self._parse_feed_item(item, quick_scan=True) for item in data[:limit]]
 
+    async def get_report_summary(self, report_id: str) -> Optional[dict]:
+        """Fetch a detailed report summary by report/job ID."""
+        async with self._make_client() as client:
+            return await self._get(client, f"/report/{report_id}/summary")
+
+    async def get_report_state(self, report_id: str) -> Optional[dict]:
+        """Fetch report state by report/job ID."""
+        async with self._make_client() as client:
+            return await self._get(client, f"/report/{report_id}/state")
+
+    async def get_report_details(self, report_id: str) -> Optional[dict]:
+        """Fetch full report details by report/job ID."""
+        async with self._make_client() as client:
+            return await self._get(client, f"/report/{report_id}")
+
     # ─────────────────────────────────────────────────────────────────────────
     # HTTP helpers
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _search_hash(
         self, client: httpx.AsyncClient, hash_value: str
-    ) -> Optional[dict]:
+    ) -> Optional[object]:
         try:
-            # Must be urlencoded form, NOT JSON
-            payload = urllib.parse.urlencode({"hash": hash_value})
             resp = await client.post(
                 f"{self.BASE_URL}/search/hash",
                 headers={
                     **self._base_headers,
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
-                content=payload,
+                data={"hash": hash_value},
             )
             if resp.status_code == 404:
                 return None
             self._raise_for_status(resp, "search/hash")
             return resp.json()
+        except ValueError:
+            raise
         except RuntimeError:
             raise
         except Exception as exc:
@@ -177,7 +189,7 @@ class HybridAnalysisService:
         overview: dict,
         summary: dict,
     ) -> dict:
-        reports: list = search.get("reports") or []
+        reports: list = self._collect_reports(search, overview, summary)
         found = bool(reports or overview.get("sha256"))
 
         # Threat score
@@ -196,6 +208,12 @@ class HybridAnalysisService:
         )
         verdict_str, verdict_num = self._normalise_verdict(raw_verdict)
         threat_level = self._VERDICT_MAP.get(verdict_num, "unknown")
+        analysis_date = (
+            overview.get("analysis_start_time")
+            or overview.get("submitted_at")
+            or datetime.utcnow().isoformat()
+        )
+        whitelisted = bool(overview.get("whitelisted") or verdict_num == 20)
 
         return {
             "ioc": original,
@@ -204,7 +222,9 @@ class HybridAnalysisService:
             "sha256": sha256,
             "threat_level": threat_level,
             "threat_score": threat_score,
+            "threat_score_computed": threat_score,
             "verdict": verdict_str,
+            "verdict_numeric": verdict_num,
             "vx_family": overview.get("vx_family"),
             "last_file_name": overview.get("last_file_name"),
             "size": overview.get("size"),
@@ -213,15 +233,21 @@ class HybridAnalysisService:
             "architecture": overview.get("architecture"),
             "tags": overview.get("tags", []),
             "submitted_at": overview.get("submitted_at"),
+            "analysis_date": analysis_date,
+            "url_analysis": bool(overview.get("url_analysis", False)),
+            "whitelisted": whitelisted,
             "reports": [
                 {
-                    "id": r.get("id"),
+                    "id": self._resolve_report_id(r),
+                    "submission_id": r.get("submission_id"),
+                    "environment_id": r.get("environment_id"),
                     "environment_description": r.get("environment_description"),
                     "state": r.get("state"),
                     "verdict": r.get("verdict"),
                 }
                 for r in reports
             ],
+            "submissions": search.get("submissions") or [],
             "mitre_attcks": summary.get("mitre_attcks", []),
             "signatures": summary.get("signatures", []),
             "total_network_connections": summary.get("total_network_connections") or 0,
@@ -240,9 +266,18 @@ class HybridAnalysisService:
             "sha256": indicator,
             "threat_level": "unknown",
             "threat_score": 0,
+            "threat_score_computed": 0,
             "verdict": "unknown",
+            "verdict_numeric": 0,
             "vx_family": None,
             "tags": [],
+            "size": None,
+            "type": None,
+            "type_short": [],
+            "last_file_name": None,
+            "analysis_date": datetime.utcnow().isoformat(),
+            "url_analysis": False,
+            "whitelisted": False,
             "reports": [],
             "mitre_attcks": [],
             "signatures": [],
@@ -250,6 +285,122 @@ class HybridAnalysisService:
             "ha_url": f"https://www.hybrid-analysis.com/search?query={indicator}",
             "timestamp": datetime.utcnow().isoformat(),
         }
+
+    @staticmethod
+    def _normalise_search_data(data: Optional[object]) -> Optional[dict]:
+        """
+        Hybrid Analysis may return either:
+        - dict with { reports: [...], sha256s: [...] }
+        - list of report objects directly
+        """
+        if data is None:
+            return None
+
+        if isinstance(data, list):
+            reports = [r for r in data if isinstance(r, dict)]
+            sha256s = []
+            for r in reports:
+                s = r.get("sha256")
+                if isinstance(s, str) and len(s) == 64:
+                    sha256s.append(s)
+            # keep order, remove duplicates
+            seen = set()
+            unique_sha256s = []
+            for s in sha256s:
+                if s not in seen:
+                    seen.add(s)
+                    unique_sha256s.append(s)
+            return {
+                "reports": reports,
+                "sha256s": unique_sha256s,
+            }
+
+        if isinstance(data, dict):
+            reports = data.get("reports")
+            if not isinstance(reports, list):
+                reports = []
+            sha256s = data.get("sha256s")
+            if not isinstance(sha256s, list):
+                sha256s = []
+            if not sha256s and reports:
+                for r in reports:
+                    if isinstance(r, dict):
+                        s = r.get("sha256")
+                        if isinstance(s, str) and len(s) == 64:
+                            sha256s.append(s)
+            return {
+                **data,
+                "reports": reports,
+                "sha256s": sha256s,
+            }
+
+        return None
+
+    @staticmethod
+    def _collect_reports(search: dict, overview: dict, summary: dict) -> list:
+        """Collect report-like records from all known HA payload locations."""
+        merged = []
+
+        def _add(items):
+            if not isinstance(items, list):
+                return
+            for item in items:
+                if isinstance(item, dict):
+                    merged.append(item)
+
+        _add(search.get("reports"))
+        _add(overview.get("related_reports"))
+        _add(overview.get("reports"))
+        _add(summary.get("related_reports"))
+        _add(summary.get("reports"))
+
+        # Some HA responses for search/hash return one static-analysis object
+        # with many submissions but no reports[]; provide fallback cards.
+        if len(merged) <= 1:
+            submissions = search.get("submissions")
+            if isinstance(submissions, list) and len(submissions) > 1:
+                env = search.get("environment_description") or "Static Analysis"
+                state = search.get("state") or "SUCCESS"
+                verdict = search.get("verdict") or "unknown"
+                for sub in submissions:
+                    sid = sub.get("submission_id") if isinstance(sub, dict) else None
+                    merged.append(
+                        {
+                            "id": None,
+                            "submission_id": sid,
+                            "environment_id": search.get("environment_id"),
+                            "environment_description": env,
+                            "state": state,
+                            "verdict": verdict,
+                        }
+                    )
+
+        # De-duplicate while preserving order.
+        out = []
+        seen = set()
+        for r in merged:
+            key = (
+                r.get("id"),
+                r.get("submission_id"),
+                r.get("environment_id"),
+                r.get("environment_description"),
+                r.get("state"),
+                r.get("verdict"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+        return out
+
+    @staticmethod
+    def _resolve_report_id(report: dict) -> Optional[str]:
+        """Resolve a usable report id from known HA fields."""
+        for key in ("id", "report_id", "job_id", "analysis_id"):
+            value = report.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
 
     @staticmethod
     def _parse_feed_item(item: dict, quick_scan: bool = False) -> dict:
@@ -263,8 +414,17 @@ class HybridAnalysisService:
         vn = item.get("verdict", 0)
         return {
             "report_id": item.get("quick_scan_id" if quick_scan else "report_id"),
+            "md5": item.get("md5"),
+            "sha1": item.get("sha1"),
             "sha256": item.get("sha256"),
+            "sha512": item.get("sha512"),
             "submit_name": item.get("submit_name"),
+            "url_analysis": bool(item.get("url_analysis", False)),
+            "size": item.get("size"),
+            "mime": item.get("mime"),
+            "type": item.get("type"),
+            "type_short": item.get("type_short") or [],
+            "environment_id": item.get("environment_id"),
             "verdict": vn,
             "verdict_human": item.get("verdict_human") or vmap.get(vn, "unknown"),
             "environment_description": item.get("environment_description"),

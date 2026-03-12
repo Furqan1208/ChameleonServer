@@ -107,13 +107,27 @@ class FileScanService:
         if filters:
             params["filter"] = ",".join(filters)
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{self.BASE_URL}/scan/{flow_id}/report",
-                headers=self._headers,
-                params=params,
-            )
-            return self._handle_response(resp, f"status for flow {flow_id}")
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"{self.BASE_URL}/scan/{flow_id}/report",
+                    headers=self._headers,
+                    params=params,
+                )
+                result = self._handle_response(resp, f"status for flow {flow_id}")
+                
+                # Log status details for debugging
+                state = result.get("state", "")
+                all_finished = result.get("allFinished", False)
+                print(f"[FileScan] Status for {flow_id}: state='{state}', allFinished={all_finished}, filters={filters}")
+                
+                return result
+        except httpx.ConnectError as e:
+            print(f"[FileScan] Network error while checking status for {flow_id}: {e}")
+            raise RuntimeError(f"Network error connecting to FileScan API. Please check your internet connection.") from e
+        except httpx.TimeoutException as e:
+            print(f"[FileScan] Timeout while checking status for {flow_id}: {e}")
+            raise RuntimeError(f"FileScan API request timed out. Please try again.") from e
 
     async def get_report(
         self,
@@ -178,15 +192,19 @@ class FileScanService:
         Retrieve a normalised AnalysisResult from a completed scan.
         Raises RuntimeError if the scan is not yet finished.
         """
-        status = await self.get_scan_status(
-            flow_id,
-            filters=["general", "finalVerdict"],
-        )
-
+        # Get status WITHOUT filters to get complete metadata including state, allFinished, and file hash
+        status = await self.get_scan_status(flow_id, filters=None)
+        
+        # BOTH state and allFinished must be true for completion
         state = status.get("state", "")
-        if state != "finished":
-            raise RuntimeError(f"Scan {flow_id} is not finished yet (state: {state})")
+        all_finished = status.get("allFinished", False)
+        
+        print(f"[FileScan] Full analysis check for {flow_id}: state='{state}', allFinished={all_finished}")
+        
+        if state != "finished" or not all_finished:
+            raise RuntimeError(f"Scan {flow_id} is not finished yet (state: {state}, allFinished: {all_finished})")
 
+        # Extract reports from the unfiltered status
         reports: dict = status.get("reports", {})
         if not reports:
             raise RuntimeError(f"No reports found for flow {flow_id}")
@@ -194,11 +212,19 @@ class FileScanService:
         report_id = next(iter(reports))
         status_report = reports[report_id]
 
+        # Extract file hash from the unfiltered report
         file_hash = self._extract_hash(status_report)
         if not file_hash:
+            print(f"[FileScan] DEBUG: report_id={report_id}, report_keys={list(status_report.keys())}")
+            print(f"[FileScan] DEBUG: file field={status_report.get('file')}")
+            print(f"[FileScan] DEBUG: hash field={status_report.get('hash')}")
+            print(f"[FileScan] DEBUG: inputFileHash field={status_report.get('inputFileHash')}")
+            print(f"[FileScan] DEBUG: Full report structure: {status_report}")
             raise RuntimeError("Could not determine file hash from scan report")
 
-        # Fetch richer report data (safe filters only)
+        print(f"[FileScan] Found file hash: {file_hash[:16]}... for report {report_id}")
+
+        # Use the unfiltered status report as base, optionally enhance with filtered data
         full_report = status_report
         try:
             detailed = await self.get_report(
@@ -206,9 +232,13 @@ class FileScanService:
                 file_hash,
                 filters=["general", "finalVerdict", "allSignalGroups", "allTags"],
             )
-            full_report = detailed.get("reports", {}).get(report_id, status_report)
+            detailed_report = detailed.get("reports", {}).get(report_id)
+            if detailed_report:
+                # Merge filtered details into the base report
+                full_report = {**status_report, **detailed_report}
+                print(f"[FileScan] Enhanced report with filtered details")
         except Exception as exc:
-            print(f"[FileScan] Could not fetch detailed report: {exc}")
+            print(f"[FileScan] Could not fetch detailed report (using unfiltered data): {exc}")
 
         # Similarity search (best-effort)
         similar_files: list = []
