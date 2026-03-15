@@ -75,6 +75,10 @@ class UserService:
             if v is not None
         }
 
+        # Treat role submission as onboarding completion.
+        if update_data.get("role"):
+            update_data["onboarding_completed"] = True
+
         if update_data:
             await self.collection.update_one(
                 {"_id": ObjectId(user_id)}, {"$set": update_data}

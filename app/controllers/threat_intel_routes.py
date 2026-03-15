@@ -1,10 +1,15 @@
 # app/controllers/threat_intel_routes.py
+from datetime import datetime, timezone
 from typing import List, Optional
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
+from app.database.mongodb import get_database
 from app.dependencies.user_dependency import get_current_user
+from app.models.user import UserModel
 from app.services.threat_intel_Integerations.abuseipdb_service import AbuseIPDBService
 from app.services.threat_intel_Integerations.alienvault_service import (
     AlienVaultOTXService,
@@ -23,10 +28,48 @@ from app.services.threat_intel_Integerations.unified_service import (
 )
 from app.services.threat_intel_Integerations.virustotal_service import VirusTotalService
 
+async def track_threat_intel_query(
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Increment query counters for the authenticated user on each threat-intel API call."""
+    if not current_user.id:
+        return
+
+    if not ObjectId.is_valid(current_user.id):
+        return
+
+    users = db.users
+    user_object_id = ObjectId(current_user.id)
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    if current_user.threat_intel_queries_date == today:
+        await users.update_one(
+            {"_id": user_object_id},
+            {
+                "$inc": {
+                    "threat_intel_queries_total": 1,
+                    "threat_intel_queries_today": 1,
+                }
+            },
+        )
+    else:
+        await users.update_one(
+            {"_id": user_object_id},
+            {
+                "$inc": {"threat_intel_queries_total": 1},
+                "$set": {
+                    "threat_intel_queries_today": 1,
+                    "threat_intel_queries_date": today,
+                },
+            },
+        )
+
+
 router = APIRouter(
     prefix="/threat-intel",
     tags=["threat-intel"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(track_threat_intel_query)],
 )
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
