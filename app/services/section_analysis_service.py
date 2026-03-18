@@ -788,6 +788,34 @@ class SectionAnalyzer:
                     if context
                     else f"{prompt_template}\n\nANALYSIS DATA:\n{input_data}"
                 )
+        elif section_name == "network_analysis":
+            try:
+                network_data = json.loads(input_data) if input_data else {}
+                full_prompt = prompt_template
+
+                if "{network_data}" in prompt_template:
+                    network_data_str = json.dumps(network_data, indent=2)
+                    self.logger.debug(
+                        f"Replacing {{network_data}} placeholder with {len(network_data_str)} chars"
+                    )
+                    full_prompt = full_prompt.replace("{network_data}", network_data_str)
+
+                if "{previous_analysis}" in prompt_template:
+                    context_str = context if context else "No previous analysis available"
+                    full_prompt = full_prompt.replace("{previous_analysis}", context_str)
+
+                if context and "{previous_analysis}" not in prompt_template:
+                    full_prompt = f"{full_prompt}\n\nCONTEXT:\n{context}"
+
+                return full_prompt
+
+            except json.JSONDecodeError as e:
+                self.logger.error(f"JSON decode error for network data: {e}")
+                return (
+                    f"{prompt_template}\n\n{context}\n\nANALYSIS DATA:\n{input_data}"
+                    if context
+                    else f"{prompt_template}\n\nANALYSIS DATA:\n{input_data}"
+                )
         else:
             return (
                 f"{prompt_template}\n\n{context}\n\nANALYSIS DATA:\n{input_data}"

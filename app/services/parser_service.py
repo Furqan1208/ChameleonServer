@@ -9,6 +9,7 @@ MODEL_FILES = {
     "cape": "cape_processing_parser.py",
     "info": "info_parser.py",
     "memory": "memory_parser.py",
+    "network": "network_parser.py",
     "signatures": "signatures_malscore_malstatus_ttps_parser.py",
     "statistics": "statistics_parser.py",
     "strings": "strings_parser.py",
@@ -198,6 +199,19 @@ class SectionParser:
             print(f"Error parsing strings: {e}")
             return None
 
+    def parse_network(self, report_path: Path) -> Optional[Dict[str, Any]]:
+        if "network" not in self.model_loader.loaded_models:
+            return None
+
+        try:
+            cleaned_network = self.model_loader.loaded_models[
+                "network"
+            ].parse_network_section(report_path)
+            return cleaned_network
+        except Exception as e:
+            print(f"Error parsing network: {e}")
+            return None
+
     def parse_target(self, report_path: Path) -> Optional[Dict[str, Any]]:
         if "target" not in self.model_loader.loaded_models:
             return None
@@ -338,6 +352,7 @@ class ParserService:
             "behavior": self.section_parser.parse_behavior,
             "signatures": self.section_parser.parse_signatures,
             "memory": self.section_parser.parse_memory,
+            "network": self.section_parser.parse_network,
             "cape": self.section_parser.parse_cape_section,
             "statistics": self.section_parser.parse_statistics,
             "strings": self.section_parser.parse_strings,

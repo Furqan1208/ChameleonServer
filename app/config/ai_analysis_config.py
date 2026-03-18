@@ -58,6 +58,14 @@ class AIAnalysisConfig:
                 "max_parallel_chunks": 3,
                 "priority": 2,
             },
+            {
+                "section": "network_analysis",
+                "prompt_file": "network_analysis_prompt.txt",
+                "input_sections": ["network"],
+                "requires_previous": True,
+                "chunkable": False,
+                "priority": 2,
+            },
             # {
             #     "section": "strings_analysis",
             #     "prompt_file": "strings_analysis_initial_prompt.txt",

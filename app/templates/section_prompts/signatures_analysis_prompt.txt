@@ -6,15 +6,15 @@ TASK: Perform strictly bounded, non-interpretive documentation of the SIGNATURES
 
 ANALYSIS SCOPE:
 - Rule-based signatures observed during execution
-- Signature metadata: names, descriptions, categories, severity, confidence
+- Signature metadata aggregated analysis
 - Detection framework mappings (MITRE ATT&CK, MBCS)
 - Aggregate indicators: malscore, malstatus
 
 STRICT OPERATIONAL CONSTRAINTS (NON-NEGOTIABLE)
 
 1. DATA SOURCES:
-   - PRIMARY: The provided "signatures" section JSON ({signatures_data})
-   - CONTEXTUAL REFERENCE: Previous analysis stages ({previous_analysis}) for factual consistency only
+   - PRIMARY: The provided "signatures" section JSON (signatures_data)
+   - CONTEXTUAL REFERENCE: Previous analysis stages (previous_analysis) for factual consistency only
 
 2. ABSOLUTELY PROHIBITED:
    - Behavioral interpretation or threat assessment
@@ -29,12 +29,10 @@ STRICT OPERATIONAL CONSTRAINTS (NON-NEGOTIABLE)
 3. PREVIOUS CONTEXT USAGE RULES:
    - REFERENCE PERMITTED: Confirm factual consistency (file names, PIDs, paths, timestamps)
    - REFERENCE PROHIBITED: Build explanations, narratives, or correlations across stages
-   - EXAMPLE PERMITTED: "Signature references {file_name} from Stage 2"
-   - EXAMPLE PROHIBITED: "Signature explains {behavior} observed in Stage 1"
 
 4. OBSERVATION BOUNDARIES:
-   - Signature metadata as provided
-   - Detection framework mappings as provided
+   - Signature metadata aggregated patterns
+   - Detection framework mappings aggregated
    - Aggregate metrics as provided
    - No expansion beyond explicit JSON fields
 
@@ -57,7 +55,6 @@ SECTION DATA:
 
 OUTPUT REQUIREMENTS
 
-LAYER 1: MACHINE-READABLE JSON
 CRITICAL: Response MUST begin with EXACTLY this JSON structure. No wrappers, metadata, or additional fields.
 
 {
@@ -67,24 +64,60 @@ CRITICAL: Response MUST begin with EXACTLY this JSON structure. No wrappers, met
     "reported_malscore": "<float | malscore>",
     "reported_malstatus": "<string | malstatus>"
   },
-  "signature_observations": [
-    {
-      "signature_name": "<string | signatures[].name>",
-      "description": "<string | signatures[].description>",
-      "categories": "<array | signatures[].categories>",
-      "severity": "<integer | signatures[].severity>",
-      "confidence": "<integer | signatures[].confidence>",
-      "data_summary": "<string | signatures[].data_summary or null>",
-      "data_artifacts": "<array | signatures[].data or null>"
-    }
-  ],
-  "detection_framework_mappings": [
-    {
-      "signature_name": "<string | ttps[].signature>",
-      "mitre_attack_ids": "<array | ttps[].ttps>",
-      "mbcs_codes": "<array | ttps[].mbcs or null>"
-    }
-  ],
+  "signature_pattern_analysis": {
+    "severity_distribution": {
+      "critical": "<integer | count of signatures with severity >= 8>",
+      "high": "<integer | count of signatures with severity 6-7>",
+      "medium": "<integer | count of signatures with severity 3-5>",
+      "low": "<integer | count of signatures with severity 1-2>",
+      "info": "<integer | count of signatures with severity 0>"
+    },
+    "confidence_distribution": {
+      "high": "<integer | count of signatures with confidence >= 80>",
+      "medium": "<integer | count of signatures with confidence 40-79>",
+      "low": "<integer | count of signatures with confidence < 40>"
+    },
+    "category_breakdown": {
+      "<category_name>": "<integer | count of signatures in this category>"
+    },
+    "top_categories": "<array | top 3 categories by count>",
+    "most_severe_signatures": [
+      {
+        "name": "<string | signature with highest severity>",
+        "severity": "<integer | severity value>",
+        "confidence": "<integer | confidence value>",
+        "description": "<string | brief description>"
+      }
+    ]
+  },
+  "detection_framework_analysis": {
+    "signatures_with_mitre": "<integer | count of signatures with MITRE mappings>",
+    "signatures_with_mbcs": "<integer | count of signatures with MBCS mappings>",
+    "mitre_techniques_coverage": {
+      "<technique_id>": "<integer | count of signatures mapping to this technique>"
+    },
+    "top_mitre_techniques": "<array | top 3 MITRE techniques by signature count>",
+    "framework_coverage_percentage": "<float | (signatures_with_mitre / total_signature_count) * 100>"
+  },
+  "notable_signature_highlights": {
+    "critical_severity_signatures": [
+      {
+        "name": "<string | signature name>",
+        "description": "<string | description>",
+        "confidence": "<integer | confidence>"
+      }
+    ],
+    "high_confidence_signatures": [
+      {
+        "name": "<string | signature name>",
+        "description": "<string | description>",
+        "severity": "<integer | severity>"
+      }
+    ],
+    "unique_or_rare_signatures": [
+      "<string | signature names that stand out>"
+    ]
+  },
   "scope_and_limitations": {
     "behavioral_analysis_performed": false,
     "memory_analysis_performed": false,
@@ -93,82 +126,82 @@ CRITICAL: Response MUST begin with EXACTLY this JSON structure. No wrappers, met
     "threat_attribution_performed": false,
     "limitation_statement": "This stage records sandbox-generated signatures and detection metadata without reinterpretation, validation, or threat assessment."
   },
-  "Contextual Analysis Summary (Stage 3 – Signature Metadata)": {
-    "Detection Context": "<string | EXACT DERIVATION: Use Template 1>",
-    "Signature Characteristics": "<string | EXACT DERIVATION: Use Template 2>",
-    "Framework Mapping Context": "<string | EXACT DERIVATION: Use Template 3>",
-    "Confidence and Severity Context": "<string | EXACT DERIVATION: Use Template 4>",
-    "Scope Boundary Statement": "<string | EXACT DERIVATION: Use Template 5>"
+  "signature_summary": {
+    "detection_context": "Total of {total_signature_count} signatures reported with malscore {reported_malscore} and {reported_malstatus} status.",
+    "severity_context": "Severities range from {min_severity} to {max_severity} with {critical_count} critical, {high_count} high, {medium_count} medium, and {low_count} low severity signatures.",
+    "confidence_context": "Confidence levels range from {min_confidence} to {max_confidence} with {high_conf_count} high confidence signatures.",
+    "category_context": "Signatures span {unique_category_count} categories including {top_categories_list}.",
+    "mitre_context": "{mitre_count} of {total_count} signatures have MITRE ATT&CK mappings {mbcs_context}.",
+    "scope_boundary": "Signature documentation without interpretation or validation.",
+    "conclusion": "<string | 3-4 sentence summary of the signature findings: what the signature set indicates overall, the most notable detection patterns, and what this means for downstream analysis>"
   }
 }
 
-EXACT DERIVATION TEMPLATES (MUST USE THESE)
+CONCLUSION GUIDELINES:
 
-Template 1 - Detection Context:
-- Format: "Total of {total_signature_count} signatures reported with malscore {reported_malscore} and {reported_malstatus} status."
-- Derivation: Direct from signature_detection_overview fields
+Write a 3-4 sentence conclusion that:
+- Summarizes the overall signature landscape (volume, severity, confidence)
+- Highlights the most significant detection patterns (top categories, critical signatures)
+- Indicates what these signatures suggest about the sample's capabilities
+- Sets expectations for what downstream stages (memory, network) might reveal
+- Maintains neutral, documentation-only tone without behavioral interpretation
 
-Template 2 - Signature Characteristics:
-1. Extract ALL unique categories from ALL signature_observations[].categories
-2. Remove duplicates, sort alphabetically
-3. Join with ", " and "and" before last item
-4. Format: "Signatures include {category_list} categories with corresponding data artifacts."
-5. Example: "Signatures include anti-debug, evasion, malware, packer, stealth, and static categories with corresponding data artifacts."
+EXAMPLE CONCLUSION:
+"The signature set comprises {total_count} detections with a malscore of {malscore}, indicating {malstatus} classification. Critical severity signatures detect {critical_patterns}, while high confidence detections confirm {confirmed_capabilities}. The concentration of {top_categories} signatures suggests the sample exhibits {capability_indicators} functionality. These signatures provide strong detection signals that should correlate with memory artifacts and network behavior in subsequent analysis stages."
 
-Template 3 - Framework Mapping Context:
-- If detection_framework_mappings array length > 0:
-  1. mapped_count = length of detection_framework_mappings array
-  2. total_count = signature_detection_overview.total_signature_count
-  3. Check if ANY detection_framework_mappings[].mbcs_codes != null
-  4. If MBCS present: "{mapped_count} of {total_count} signatures have MITRE ATT&CK mappings and MBCS codes."
-  5. If no MBCS: "{mapped_count} of {total_count} signatures have MITRE ATT&CK mappings."
-- Else: "No detection framework mappings reported."
+ANALYSIS GUIDELINES - AGGREGATED SIGNATURE ANALYSIS
 
-Template 4 - Confidence and Severity Context:
-1. min_severity = MIN(signature_observations[].severity)
-2. max_severity = MAX(signature_observations[].severity)
-3. min_confidence = MIN(signature_observations[].confidence)
-4. max_confidence = MAX(signature_observations[].confidence)
-5. Format: "Signature severities range from {min_severity} to {max_severity} with confidence levels from {min_confidence} to {max_confidence}."
+1. SEVERITY ANALYSIS:
+   - Critical (8-10): Immediate attention required
+   - High (6-7): Significant malicious indicators
+   - Medium (3-5): Suspicious behavior patterns
+   - Low (1-2): Informational or low-impact
+   - Info (0): Non-malicious observations
 
-Template 5 - Scope Boundary Statement:
-- Fixed: "Signature documentation without interpretation or validation."
+2. CONFIDENCE ANALYSIS:
+   - High (80-100): Strong detection signals
+   - Medium (40-79): Moderate reliability
+   - Low (0-39): Weak or generic detections
 
-STRUCTURAL ENFORCEMENT RULES
+3. CATEGORY ANALYSIS:
+   - Group signatures by functional category
+   - Identify dominant detection themes
+   - Note unusual or rare categories
 
-1. JSON INTEGRITY:
-   - Response MUST begin with { and end with }
-   - No text before or after JSON
-   - No metadata wrappers (section, type, ai_model, timestamp, etc.)
+4. MITRE FRAMEWORK ANALYSIS:
+   - Count techniques covered
+   - Identify most common techniques
+   - Note technique diversity
 
-2. DATA MAPPING:
-   - Use exact JSON paths specified
-   - Set null for missing optional fields
-   - Preserve original data types
+DATA-DRIVEN REQUIREMENTS:
 
-3. DERIVATION COMPLIANCE:
-   - MUST use exact templates above
-   - NO variations, additions, or interpretations
-   - Category extraction MUST include ALL unique categories
+1. ALL insights reference aggregate patterns from {signatures_data}
+2. Counts and distributions based on actual signature data
+3. Notable signatures selected based on severity/confidence thresholds
+4. No interpretation beyond what signature metadata directly states
 
-4. CONTEXT USAGE:
-   - May reference previous context for factual consistency only
-   - May NOT use previous context for interpretation or correlation
-   - Signature analysis MUST stand alone from previous stages
+ANTI-HALLUCINATION SAFEGUARDS:
 
-VALIDATION CHECKPOINTS (BEFORE FINAL OUTPUT)
-1. [ ] Response begins and ends with pure JSON only
-2. [ ] All summary sentences use exact templates
-3. [ ] Category list includes ALL unique categories from data
-4. [ ] No interpretive language in summaries
-5. [ ] No metadata wrappers present
+1. NO listing of every individual signature (aggregate only)
+2. NO reinterpretation of signature meaning
+3. NO severity/confidence reassessment
+4. NO behavioral conclusions
+5. NO threat actor attribution
 
-FINAL ENFORCEMENT
+VALIDATION CHECKLIST:
 
-This is a documentation-only stage. Any deviation into:
-- Behavioral interpretation
-- Threat assessment
-- Cross-stage correlation narratives
-- Structural non-compliance (wrappers, metadata)
+[ ] All counts from actual signature data
+[ ] Severity/confidence ranges from actual values
+[ ] Categories from actual signature categories
+[ ] MITRE techniques from actual mappings
+[ ] No individual signature listings beyond highlights
+[ ] No interpretive language
+[ ] Conclusion is 3-4 sentences and evidence-based
 
-...constitutes a critical violation of analysis constraints.
+FINAL REQUIREMENTS:
+- Aggregate pattern analysis only
+- Distribution statistics over individual listings
+- Notable highlights with strict thresholds
+- 3-4 sentence evidence-based conclusion
+- Neutral, documentation-only tone
+- Strict adherence to signature metadata

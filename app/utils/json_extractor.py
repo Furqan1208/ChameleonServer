@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Dict, Optional
 
 
@@ -14,29 +15,33 @@ class JSONExtractor:
         except json.JSONDecodeError:
             pass
 
-        import re
+        # Prefer complete JSON blocks and try larger candidates first.
+        candidates = []
 
-        patterns = [
-            r"```json\s*(\{.*\})\s*```",
-            r"```\s*(\{.*\})\s*```",
-            r"```json\s*(\{[\s\S]*?)\s*```",
-            r"```\s*(\{[\s\S]*?)\s*```",
-            r'(\{\s*"[^"]*"\s*:\s*[^}]*\})',
-            r"^(\{[\s\S]*?\})(?:\n|$)",
-        ]
+        fenced_blocks = re.findall(
+            r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE
+        )
+        candidates.extend(fenced_blocks)
 
-        for pattern in patterns:
-            matches = re.findall(pattern, cleaned, re.DOTALL | re.MULTILINE)
-            for match in matches:
-                if not match:
-                    continue
+        candidates.extend(self._extract_balanced_json_objects(cleaned))
+        for block in fenced_blocks:
+            candidates.extend(self._extract_balanced_json_objects(block))
 
-                try:
-                    json_text = self._clean_json(match)
-                    parsed = json.loads(json_text)
-                    return parsed
-                except json.JSONDecodeError:
-                    continue
+        seen = set()
+        unique_candidates = []
+        for candidate in candidates:
+            text = candidate.strip()
+            if text and text not in seen:
+                seen.add(text)
+                unique_candidates.append(text)
+
+        for candidate in sorted(unique_candidates, key=len, reverse=True):
+            try:
+                json_text = self._clean_json(candidate)
+                parsed = json.loads(json_text)
+                return parsed
+            except json.JSONDecodeError:
+                continue
 
         if len(cleaned) > 300:
             structured = self._structure_text(cleaned)
@@ -56,8 +61,6 @@ class JSONExtractor:
         }
 
     def _clean_json(self, text: str) -> str:
-        import re
-
         text = text.strip()
         text = re.sub(r",\s*}", "}", text)
         text = re.sub(r",\s*]", "]", text)
@@ -69,6 +72,26 @@ class JSONExtractor:
             text += "}" * (open_braces - close_braces)
 
         return text
+
+    def _extract_balanced_json_objects(self, text: str) -> list[str]:
+        """Extract balanced top-level JSON object substrings from free text."""
+        objects = []
+        depth = 0
+        start_idx = None
+
+        for idx, char in enumerate(text):
+            if char == "{":
+                if depth == 0:
+                    start_idx = idx
+                depth += 1
+            elif char == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start_idx is not None:
+                        objects.append(text[start_idx : idx + 1])
+                        start_idx = None
+
+        return objects
 
     def _structure_text(self, text: str) -> Optional[Dict[str, Any]]:
         import re
