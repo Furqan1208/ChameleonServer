@@ -209,6 +209,7 @@ class VirusTotalService:
             },
             "behavioral_indicators": [],
             "relationships": {},
+            "raw_data": data,
             "vt_url": f"https://www.virustotal.com/gui/file/{hash_}",
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -233,6 +234,7 @@ class VirusTotalService:
             },
             "behavioral_indicators": [],
             "relationships": {},
+            "raw_data": data,
             "vt_url": f"https://www.virustotal.com/gui/ip-address/{ip}",
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -254,6 +256,7 @@ class VirusTotalService:
             },
             "behavioral_indicators": [],
             "relationships": {},
+            "raw_data": data,
             "vt_url": f"https://www.virustotal.com/gui/domain/{domain}",
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -274,6 +277,7 @@ class VirusTotalService:
             "threat_score": detection_stats["threat_score"],
             "behavioral_indicators": [],
             "relationships": {},
+            "raw_data": data,
             "vt_url": f"https://www.virustotal.com/gui/url/{url_id}",
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -298,6 +302,7 @@ class VirusTotalService:
             "threat_score": 0,
             "behavioral_indicators": [],
             "relationships": {},
+            "raw_data": {"data": {"attributes": {"error": "Indicator not found in VirusTotal"}}},
             "vt_url": f"https://www.virustotal.com/gui/{ioc_type}/{indicator}",
             "timestamp": datetime.utcnow().isoformat(),
         }

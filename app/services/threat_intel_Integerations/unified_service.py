@@ -228,9 +228,10 @@ class UnifiedThreatIntelService:
     async def _search_threatfox(self, indicator: str) -> dict:
         try:
             data = await self.threatfox.search_indicator(indicator)
+            is_error = data.get("query_status") == "error" or bool(data.get("error"))
             return {
                 "source": "threatfox",
-                "success": True,
+                "success": not is_error,
                 "data": data,
                 "timestamp": datetime.utcnow().isoformat(),
             }

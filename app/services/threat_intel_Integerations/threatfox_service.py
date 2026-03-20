@@ -80,8 +80,10 @@ class ThreatFoxService:
                 if not resp.is_success:
                     return []
                 body = resp.json()
-                data = body.get("data") or []
-                return data[:limit]
+                raw_data = body.get("data")
+                if not isinstance(raw_data, list):
+                    return []
+                return [item for item in raw_data if isinstance(item, dict)][:limit]
             except Exception as e:
                 print(f"[ThreatFox] get_recent_iocs error: {e}")
                 return []
@@ -107,15 +109,20 @@ class ThreatFoxService:
 
     def _parse_search(self, raw: dict, indicator: str) -> dict:
         query_status = raw.get("query_status", "")
-        iocs = raw.get("data") or []
+        raw_iocs = raw.get("data")
+        if isinstance(raw_iocs, list):
+            iocs = [item for item in raw_iocs if isinstance(item, dict)]
+        elif isinstance(raw_iocs, dict):
+            iocs = [raw_iocs]
+        else:
+            iocs = []
+
         found = bool(iocs) and query_status == "ok"
 
         threat_level = "unknown"
         if found:
             # Use the highest confidence score to determine threat level
-            max_confidence = max(
-                (i.get("confidence_level", 0) for i in iocs), default=0
-            )
+            max_confidence = max((i.get("confidence_level", 0) for i in iocs), default=0)
             if max_confidence >= 75:
                 threat_level = "high"
             elif max_confidence >= 50:

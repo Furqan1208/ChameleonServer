@@ -61,3 +61,104 @@ async def delete_current_user(
         raise HTTPException(status_code=404, detail="User not found or already deleted")
 
     return None
+
+
+@router.get("/api-keys")
+async def get_api_keys(
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Get masked API keys for current user"""
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
+    
+    api_keys = current_user.api_keys or {}
+    masked_keys = {}
+    
+    # Return masked keys (show only last 4 chars)
+    for service, key in api_keys.items():
+        if isinstance(key, str) and len(key) > 4:
+            masked_keys[service] = f"***{key[-4:]}"
+        else:
+            masked_keys[service] = "***"
+    
+    return {"api_keys": masked_keys}
+
+
+@router.put("/api-keys")
+async def update_api_keys(
+    api_keys: dict,
+    current_user: UserModel = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+):
+    """Update API keys for current user"""
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
+    
+    # Validate each API key is not empty
+    for service, key in api_keys.items():
+        if not key or not isinstance(key, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid API key for service '{service}'",
+            )
+    
+    # Merge with existing keys
+    current_keys = current_user.api_keys or {}
+    current_keys.update(api_keys)
+    
+    user_update = UserUpdate(api_keys=current_keys)
+    updated = await user_service.update_user(current_user.id, user_update)
+    
+    if updated is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Return masked response
+    masked_keys = {}
+    for service, key in (updated.api_keys or {}).items():
+        if isinstance(key, str) and len(key) > 4:
+            masked_keys[service] = f"***{key[-4:]}"
+        else:
+            masked_keys[service] = "***"
+    
+    return {
+        "message": "API keys updated successfully",
+        "api_keys": masked_keys
+    }
+
+
+@router.delete("/api-keys/{service}")
+async def delete_api_key(
+    service: str,
+    current_user: UserModel = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+):
+    """Delete specific API key"""
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
+    
+    api_keys = current_user.api_keys or {}
+    
+    if service not in api_keys:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"API key for service '{service}' not found",
+        )
+    
+    del api_keys[service]
+    
+    user_update = UserUpdate(api_keys=api_keys)
+    updated = await user_service.update_user(current_user.id, user_update)
+    
+    if updated is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"message": f"API key for {service} deleted successfully"}

@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
 from app.database.mongodb import get_database
-from app.dependencies.user_dependency import get_current_user
+from app.dependencies.user_dependency import get_current_user_optional
 from app.models.user import UserModel
 from app.services.threat_intel_Integerations.abuseipdb_service import AbuseIPDBService
 from app.services.threat_intel_Integerations.alienvault_service import (
@@ -29,11 +29,11 @@ from app.services.threat_intel_Integerations.unified_service import (
 from app.services.threat_intel_Integerations.virustotal_service import VirusTotalService
 
 async def track_threat_intel_query(
-    current_user: UserModel = Depends(get_current_user),
+    current_user: UserModel | None = Depends(get_current_user_optional),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     """Increment query counters for the authenticated user on each threat-intel API call."""
-    if not current_user.id:
+    if not current_user or not current_user.id:
         return
 
     if not ObjectId.is_valid(current_user.id):
