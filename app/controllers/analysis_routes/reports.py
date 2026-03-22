@@ -1,9 +1,11 @@
 # D:\FYP\ChameleonServer\app\controllers\analysis_routes\reports.py
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.services.database_service import DatabaseService
+from app.services.pdf_report_service import PDFReportService
 
-from .dependencies import get_current_user_id, get_db_service
+from .dependencies import get_current_user_id, get_db_service, get_pdf_report_service
 
 router = APIRouter()
 
@@ -264,3 +266,53 @@ async def download_report(
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to download report: {str(e)}") from e
+
+
+@router.get("/{analysis_id}/download/pdf")
+async def download_pdf_report(
+    analysis_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db_service: DatabaseService = Depends(get_db_service),
+    pdf_report_service: PDFReportService = Depends(get_pdf_report_service),
+):
+    """
+    Download CAPE + AI analysis report as PDF.
+    Important: this endpoint intentionally excludes Parse-tab data.
+    """
+    try:
+        analysis = await db_service.get_analysis(user_id=user_id, analysis_id=analysis_id)
+        if not analysis:
+            raise HTTPException(404, f"Analysis {analysis_id} not found")
+
+        cape_result = await db_service.get_cape_results(
+            user_id=user_id, analysis_id=analysis_id
+        )
+        ai_result = await db_service.get_ai_results(user_id=user_id, analysis_id=analysis_id)
+
+        if not cape_result and not ai_result:
+            raise HTTPException(
+                404,
+                "No CAPE or AI data available for PDF generation",
+            )
+
+        pdf_bytes = await run_in_threadpool(
+            pdf_report_service.generate_pdf_report,
+            analysis,
+            cape_result,
+            ai_result,
+        )
+
+        safe_filename = str(analysis.get("filename", "analysis_report")).replace('"', "")
+        content_disposition = (
+            f'attachment; filename="{analysis_id}_{safe_filename}_report.pdf"'
+        )
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": content_disposition},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate PDF report: {str(e)}") from e

@@ -12,6 +12,7 @@ from app.services.chunking_service import ChunkingService
 from app.services.database_service import DatabaseService
 from app.services.model_service import ModelService
 from app.services.parser_service import ParserService
+from app.services.pdf_report_service import PDFReportService
 
 
 async def get_analysis_user(
@@ -73,3 +74,7 @@ async def get_ai_analysis_service(
     chunking_service: ChunkingService = Depends(get_chunking_service),
 ) -> AIAnalysisService:
     return AIAnalysisService(model_service, parser_service, chunking_service)
+
+
+def get_pdf_report_service() -> PDFReportService:
+    return PDFReportService()
