@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -189,6 +190,7 @@ class VirusTotalService:
         attrs = data.get("data", {}).get("attributes", {})
         stats = attrs.get("last_analysis_stats", {})
         detection_stats = self._build_detection_stats(stats)
+        threat_classification = self._extract_threat_classification(attrs)
         return {
             "ioc": hash_,
             "ioc_type": "hash",
@@ -196,6 +198,7 @@ class VirusTotalService:
             "detection_stats": detection_stats,
             "threat_level": self._threat_level(detection_stats),
             "threat_score": detection_stats["threat_score"],
+            "threat_classification": threat_classification,
             "file_info": {
                 "hash": hash_,
                 "filename": attrs.get("meaningful_name")
@@ -212,6 +215,90 @@ class VirusTotalService:
             "raw_data": data,
             "vt_url": f"https://www.virustotal.com/gui/file/{hash_}",
             "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    def _extract_threat_classification(self, attrs: dict) -> dict:
+        classification = attrs.get("popular_threat_classification") or {}
+        label = (
+            classification.get("popular_threat_label")
+            or classification.get("suggested_threat_label")
+            or ""
+        )
+        categories_raw = classification.get("popular_threat_category") or []
+        name_raw = classification.get("popular_threat_name") or ""
+
+        def normalize_ranked_values(raw: Any) -> list[str]:
+            values: list[str] = []
+            if isinstance(raw, str):
+                text = raw.strip().lower()
+                if text:
+                    values.append(text)
+            elif isinstance(raw, dict):
+                value = raw.get("value") or raw.get("name") or raw.get("label")
+                if value:
+                    text = str(value).strip().lower()
+                    if text:
+                        values.append(text)
+            elif isinstance(raw, list):
+                for item in raw:
+                    values.extend(normalize_ranked_values(item))
+            elif raw:
+                text = str(raw).strip().lower()
+                if text:
+                    values.append(text)
+
+            deduped: list[str] = []
+            for value in values:
+                if value not in deduped:
+                    deduped.append(value)
+            return deduped
+
+        categories = normalize_ranked_values(categories_raw)
+        names = normalize_ranked_values(name_raw)
+        name = " ".join(names)
+        family_labels: list[str] = []
+
+        def add_tokens(value: str) -> None:
+            if not isinstance(value, str):
+                value = str(value)
+            for token in re.split(r"[\s,;:/._-]+", value):
+                cleaned = token.strip().lower()
+                if cleaned and cleaned not in family_labels:
+                    family_labels.append(cleaned)
+
+        # Keep the raw label plus tokenized family names for downstream ML/UI.
+        if label:
+            add_tokens(label)
+        if name:
+            add_tokens(name)
+        if not categories and label:
+            base = label.split(".", 1)[0]
+            if base and base not in family_labels:
+                family_labels.insert(0, base.lower())
+
+        generic_tokens = {"malware", "trojan", "ransomware", "worm", "adware", "spyware", "backdoor", "loader", "dropper", "unknown"}
+        specific_family = None
+        if label:
+            tail = label.split(".", 1)[-1]
+            if "/" in tail:
+                pieces = [piece.strip().lower() for piece in tail.split("/") if piece.strip()]
+                if pieces:
+                    specific_family = pieces[-1]
+            elif tail:
+                specific_family = tail.strip().lower()
+
+        if (not specific_family or specific_family in generic_tokens) and family_labels:
+            for token in reversed(family_labels):
+                if token and token not in generic_tokens:
+                    specific_family = token
+                    break
+
+        return {
+            "popular_threat_label": label or None,
+            "popular_threat_name": names[0] if names else None,
+            "popular_threat_category": categories,
+            "family_labels": family_labels,
+            "specific_family": specific_family,
         }
 
     def _parse_ip(self, data: dict, ip: str) -> dict:

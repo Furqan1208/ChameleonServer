@@ -2,6 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
 
+from app.ml.ml_prediction_service import MLPredictionService
+
 from app.services.database_service import DatabaseService
 from app.services.pdf_report_service import PDFReportService
 
@@ -55,12 +57,27 @@ async def get_analysis_results(
     Set include_details=true to get all components (CAPE, parsed, AI results).
     """
     try:
+        # ADDED_ML: Optional ML prediction added as non-breaking extra field.
+        ml_prediction = None
+        try:
+            predictor = MLPredictionService.get_instance()
+            ml_prediction = await predictor.predict_from_analysis_id(
+                analysis_id=analysis_id,
+                db=db_service.db,
+                user_id=user_id,
+            )
+            if not ml_prediction.get("ml_available", False):
+                ml_prediction = None
+        except Exception:
+            ml_prediction = None
+
         if include_details:
             result = await db_service.get_complete_analysis(
                 user_id=user_id, analysis_id=analysis_id
             )
             if not result:
                 raise HTTPException(404, f"Analysis {analysis_id} not found")
+            result["ml"] = ml_prediction
             return {"status": "success", "data": result}
         else:
             analysis = await db_service.get_analysis(
@@ -68,6 +85,7 @@ async def get_analysis_results(
             )
             if not analysis:
                 raise HTTPException(404, f"Analysis {analysis_id} not found")
+            analysis["ml"] = ml_prediction
             return {"status": "success", "data": analysis}
 
     except HTTPException:

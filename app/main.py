@@ -2,6 +2,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.controllers import ml_routes
+
 from app.controllers.analysis_routes import router as analysis_router
 from app.controllers.auth_routes import router as auth_router
 from app.controllers.threat_intel_routes import router as threat_intel_router
@@ -30,6 +32,17 @@ app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(analysis_router)
 app.include_router(threat_intel_router)
+# ADDED_ML: Register optional ML routes under /api/ml namespace.
+app.include_router(ml_routes.router, prefix="/api/ml", tags=["ML"])
+
+# ADDED_ML: Initialize optional scheduler for 6-hour retrain checks.
+try:
+    from app.ml.scheduler import initialize_ml_scheduler
+
+    initialize_ml_scheduler(app)
+except Exception:
+    # ADDED_ML: ML scheduler failure must not affect core platform availability.
+    pass
 
 
 @app.get("/")
