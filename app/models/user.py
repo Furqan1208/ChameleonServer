@@ -23,6 +23,11 @@ class UserModel(BaseModel):
     threat_intel_queries_date: Optional[str] = None
     # API Key Management
     api_keys: Optional[dict] = Field(default_factory=dict)  # Store API keys for integrations
+    # UI Preferences - user customizable settings (sidebar, tabs, theme, etc.)
+    ui_preferences: Optional[dict] = Field(
+        default_factory=dict,
+        description="User UI settings: sidebar state, theme, tab preferences, etc.",
+    )
     # utcnow() is deprecated in Python 3.12+, so we use timezone-aware datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -47,6 +52,7 @@ class UserCreate(BaseModel):
     threat_intel_queries_today: int = 0
     threat_intel_queries_date: Optional[str] = None
     api_keys: Optional[dict] = Field(default_factory=dict)
+    ui_preferences: Optional[dict] = Field(default_factory=dict)
 
 
 class UserUpdate(BaseModel):
@@ -61,6 +67,7 @@ class UserUpdate(BaseModel):
     threat_intel_queries_today: Optional[int] = None
     threat_intel_queries_date: Optional[str] = None
     api_keys: Optional[dict] = None
+    ui_preferences: Optional[dict] = None
 
 
 class TokenResponse(BaseModel):

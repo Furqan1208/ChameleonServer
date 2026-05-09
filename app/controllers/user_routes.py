@@ -162,3 +162,47 @@ async def delete_api_key(
         raise HTTPException(status_code=404, detail="User not found")
     
     return {"message": f"API key for {service} deleted successfully"}
+
+
+# ── UI Preferences ───────────────────────────────────────────────────────────
+
+
+@router.get("/preferences")
+async def get_preferences(
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Get user UI preferences with defaults for missing fields"""
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
+
+    # Return preferences or empty dict (frontend fills in defaults)
+    return current_user.ui_preferences or {}
+
+
+@router.put("/preferences")
+async def update_preferences(
+    preferences: dict,
+    current_user: UserModel = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+):
+    """Update user UI preferences (sidebar, tabs, theme, etc.)"""
+    if not current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID is missing from profile",
+        )
+
+    # Merge with existing preferences instead of replacing
+    current_prefs = current_user.ui_preferences or {}
+    current_prefs.update(preferences)
+
+    user_update = UserUpdate(ui_preferences=current_prefs)
+    updated = await user_service.update_user(current_user.id, user_update)
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"preferences": updated.ui_preferences or {}}
