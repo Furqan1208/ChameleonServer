@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.hybridanalysis")
 
 
 class HybridAnalysisService:
@@ -28,7 +31,7 @@ class HybridAnalysisService:
     def __init__(self):
         self.api_key = os.getenv("HYBRID_ANALYSIS_API_KEY", "")
         if not self.api_key:
-            print("WARNING: HYBRID_ANALYSIS_API_KEY not set")
+            _logger.warning("HYBRID_ANALYSIS_API_KEY not set")
 
     @property
     def _base_headers(self) -> dict:
@@ -133,7 +136,7 @@ class HybridAnalysisService:
         except RuntimeError:
             raise
         except Exception as exc:
-            print(f"[HybridAnalysis] search/hash error: {exc}")
+            _logger.exception("[HybridAnalysis] search/hash error: %s", exc)
             return None
 
     async def _get_overview(
@@ -157,10 +160,10 @@ class HybridAnalysisService:
         except RuntimeError:
             raise
         except httpx.TimeoutException:
-            print(f"[HybridAnalysis] timeout: {endpoint}")
+            _logger.warning("[HybridAnalysis] timeout: %s", endpoint)
             return None
         except Exception as exc:
-            print(f"[HybridAnalysis] error {endpoint}: {exc}")
+            _logger.exception("[HybridAnalysis] error %s: %s", endpoint, exc)
             return None
 
     @staticmethod

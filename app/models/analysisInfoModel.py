@@ -51,3 +51,27 @@ class InfoModel(BaseModel):
     route: Optional[str] = Field(None, description="Route used during analysis")
     user_id: Optional[int] = Field(None, description="User ID who submitted the task")
     CAPE_current_commit: str = Field(..., description="Current CAPE git commit hash")
+
+
+class InfoSummary(BaseModel):
+    """Compact summary of the info section for AI prompts."""
+
+    sandbox_platform: Optional[str] = Field(None, description="Machine platform")
+    analysis_type: Optional[str] = Field(None, description="Category of task")
+    package_used: Optional[str] = Field(None, description="Package used for analysis")
+    execution_completion_status: Optional[str] = Field(
+        None, description="Completed/Timeout/Abnormal"
+    )
+    total_duration_seconds: Optional[int] = Field(None, description="Duration")
+    timeout: Optional[bool] = Field(None, description="Timeout occurred")
+    machine_status: Optional[str] = Field(None, description="Raw machine.status")
+
+
+class InfoPayload(BaseModel):
+    """Combined raw + summary payload returned by parser."""
+
+    raw: InfoModel
+    summary: InfoSummary
+
+    class Config:
+        extra = "allow"

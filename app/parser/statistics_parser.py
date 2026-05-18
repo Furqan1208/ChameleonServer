@@ -3,7 +3,21 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.models.statisticsModel import (
+    SignatureSummary,
+    StatisticEntry,
+    Statistics,
+    StatisticsPayload,
+    StatisticsSummary,
+)
 from app.utils.filtration_and_extraction import clean_empty_values
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.parser.statistics")
+
+_MAX_PROCESSING_PREVIEW = 12
+_MAX_REPORTING_PREVIEW = 8
+_MAX_SIGNATURE_PREVIEW = 12
 
 
 def extract_statistics_data(report_path: Path) -> Dict[str, Any]:
@@ -19,29 +33,58 @@ def extract_statistics_data(report_path: Path) -> Dict[str, Any]:
                     return item["statistics"]
         return {}
     except Exception as error:
-        print(f"Error extracting statistics data: {error}")
+        _logger.exception("Error extracting statistics data: %s", error)
         return {}
 
 
-def process_time_entries(entries: List[Dict[str, Any]]) -> tuple:
-    processed_entries = []
-    zero_time_entries = []
+def _normalize_entry(entry: Any) -> Optional[StatisticEntry]:
+    if not isinstance(entry, dict):
+        return None
 
+    name = entry.get("name")
+    if not name:
+        return None
+
+    try:
+        time_value = float(entry.get("time", 0) or 0)
+    except (TypeError, ValueError):
+        time_value = 0.0
+
+    return StatisticEntry(name=str(name), time=round(time_value, 3))
+
+
+def _normalize_entries(entries: Any) -> List[StatisticEntry]:
+    if not isinstance(entries, list):
+        return []
+
+    normalized = []
     for entry in entries:
-        if isinstance(entry, dict) and entry.get("time", 0) > 0:
-            name = entry.get("name")
-            time_value = round(entry.get("time", 0), 3)
-            processed_entries.append({name: time_value})
-        elif isinstance(entry, dict) and entry.get("time", 0) == 0:
-            zero_time_entries.append(entry)
-
-    return processed_entries, zero_time_entries
+        parsed = _normalize_entry(entry)
+        if parsed:
+            normalized.append(parsed)
+    return normalized
 
 
-def calculate_total_time(processed_entries: List[Dict[str, float]]) -> float:
+def _sort_entries(entries: List[StatisticEntry]) -> List[StatisticEntry]:
+    return sorted(entries, key=lambda item: (-item.time, item.name.lower()))
+
+
+def _summarize_entries(
+    entries: List[StatisticEntry], limit: int
+) -> List[StatisticEntry]:
+    if not entries:
+        return []
+
+    sorted_entries = _sort_entries(entries)
+    if len(sorted_entries) <= limit:
+        return sorted_entries
+    return sorted_entries[:limit]
+
+
+def calculate_total_time(processed_entries: List[StatisticEntry]) -> float:
     if not processed_entries:
         return 0.0
-    return sum(entry[list(entry.keys())[0]] for entry in processed_entries)
+    return sum(entry.time for entry in processed_entries)
 
 
 def calculate_zero_time_weight(
@@ -55,49 +98,79 @@ def clean_statistics(stat_data: Any) -> Dict[str, Any]:
         if not isinstance(stat_data, dict):
             return {}
 
-        processing_entries = stat_data.get("processing", [])
-        reporting_entries = stat_data.get("reporting", [])
-        signature_entries = stat_data.get("signatures", [])
+        statistics = Statistics(
+            processing=_normalize_entries(stat_data.get("processing", [])),
+            reporting=_normalize_entries(stat_data.get("reporting", [])),
+            signatures=_normalize_entries(stat_data.get("signatures", [])),
+            extra_sections=clean_empty_values(
+                {
+                    key: value
+                    for key, value in stat_data.items()
+                    if key not in {"processing", "reporting", "signatures"}
+                    and value not in [None, {}, [], ""]
+                }
+            ),
+        )
 
-        processed_processing, zero_processing = process_time_entries(processing_entries)
-        processed_reporting, _ = process_time_entries(reporting_entries)
-        _, zero_signatures = process_time_entries(signature_entries)
+        processing_entries = statistics.processing
+        reporting_entries = statistics.reporting
+        signature_entries = statistics.signatures
 
-        total_processing_time = calculate_total_time(processed_processing)
+        zero_processing = [entry for entry in processing_entries if entry.time == 0]
+        zero_signatures = [entry for entry in signature_entries if entry.time == 0]
+        non_zero_processing = [entry for entry in processing_entries if entry.time > 0]
+        non_zero_signatures = [entry for entry in signature_entries if entry.time > 0]
+
+        total_processing_time = calculate_total_time(non_zero_processing)
         zero_time_weight = calculate_zero_time_weight(
             total_processing_time, len(zero_processing), len(zero_signatures)
         )
 
-        known_keys = {"processing", "reporting", "signatures"}
-        extra_sections = {
-            key: value
-            for key, value in stat_data.items()
-            if key not in known_keys and value not in [None, {}, [], ""]
-        }
-        extra_sections = clean_empty_values(extra_sections)
+        processing_summary = _summarize_entries(
+            non_zero_processing or processing_entries, _MAX_PROCESSING_PREVIEW
+        )
+        reporting_summary = _summarize_entries(
+            reporting_entries, _MAX_REPORTING_PREVIEW
+        )
+        signatures_preview = _summarize_entries(
+            signature_entries, _MAX_SIGNATURE_PREVIEW
+        )
 
-        cleaned_data = {
-            "processing_summary": processed_processing,
-            "reporting_summary": processed_reporting if processed_reporting else None,
-            "total_processing_time": round(total_processing_time, 3)
+        max_processing = processing_summary[0] if processing_summary else None
+
+        signatures_summary = SignatureSummary(
+            total_count=len(signature_entries),
+            zero_time_count=len(zero_signatures),
+            non_zero_count=len(non_zero_signatures),
+            top_entries=signatures_preview,
+            truncated_entries=max(0, len(signature_entries) - len(signatures_preview)),
+        )
+
+        summary = StatisticsSummary(
+            processing_summary=processing_summary,
+            reporting_summary=reporting_summary,
+            signatures_summary=signatures_summary,
+            total_processing_time=round(total_processing_time, 3)
             if total_processing_time
             else None,
-            "zero_time_processing_count": len(zero_processing)
-            if zero_processing
-            else None,
-            "zero_time_signatures_count": len(zero_signatures)
-            if zero_signatures
-            else None,
-            "zero_time_weight": round(zero_time_weight, 3)
-            if zero_time_weight
-            else None,
-            "extra_sections": extra_sections if extra_sections else None,
-        }
+            max_processing_phase=max_processing.name if max_processing else None,
+            max_processing_time=max_processing.time if max_processing else None,
+            zero_time_processing_count=len(zero_processing) or None,
+            zero_time_signatures_count=len(zero_signatures) or None,
+            zero_time_weight=round(zero_time_weight, 3) if zero_time_weight else None,
+            entry_counts={
+                "processing": len(processing_entries),
+                "reporting": len(reporting_entries),
+                "signatures": len(signature_entries),
+            },
+            extra_sections=statistics.extra_sections,
+        )
 
-        return clean_empty_values(cleaned_data)
+        payload = StatisticsPayload(raw=statistics, summary=summary)
+        return clean_empty_values(payload.summary.model_dump(exclude_none=True))
 
     except Exception as error:
-        print(f"Error cleaning statistics data: {error}")
+        _logger.exception("Error cleaning statistics data: %s", error)
         return {}
 
 
@@ -106,9 +179,9 @@ def save_cleaned_statistics(cleaned_data: Dict[str, Any], output_path: Path):
         cleaned_data = clean_empty_values(cleaned_data)
         with open(output_path, "w", encoding="utf-8") as file:
             json.dump(cleaned_data, file, indent=2)
-        print(f"Statistics data saved to: {output_path}")
+        _logger.info("Statistics data saved to: %s", output_path)
     except Exception as error:
-        print(f"Error saving statistics data: {error}")
+        _logger.exception("Error saving statistics data: %s", error)
 
 
 def process_statistics_section(report_path: Path) -> Optional[Dict[str, Any]]:
@@ -122,7 +195,7 @@ def parse_statistics_section(report_path: Path) -> Optional[Dict[str, Any]]:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python statistics_model.py <cape_report.json>")
+        _logger.info("Usage: python statistics_parser.py <cape_report.json>")
         sys.exit(1)
 
     report_file = Path(sys.argv[1])

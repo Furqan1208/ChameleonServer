@@ -3,6 +3,9 @@ from datetime import datetime
 from typing import Any, Optional
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.filescan")
 
 
 class FileScanService:
@@ -38,7 +41,7 @@ class FileScanService:
     def __init__(self):
         self.api_key = os.getenv("FILESCAN_API_KEY", "")
         if not self.api_key:
-            print("WARNING: FILESCAN_API_KEY not set")
+            _logger.warning("FILESCAN_API_KEY not set")
 
     @property
     def _headers(self) -> dict:
@@ -119,14 +122,20 @@ class FileScanService:
                 # Log status details for debugging
                 state = result.get("state", "")
                 all_finished = result.get("allFinished", False)
-                print(f"[FileScan] Status for {flow_id}: state='{state}', allFinished={all_finished}, filters={filters}")
+                _logger.debug(
+                    "FileScan status for %s: state='%s', allFinished=%s, filters=%s",
+                    flow_id,
+                    state,
+                    all_finished,
+                    filters,
+                )
                 
                 return result
         except httpx.ConnectError as e:
-            print(f"[FileScan] Network error while checking status for {flow_id}: {e}")
+            _logger.exception("Network error while checking status for %s: %s", flow_id, e)
             raise RuntimeError(f"Network error connecting to FileScan API. Please check your internet connection.") from e
         except httpx.TimeoutException as e:
-            print(f"[FileScan] Timeout while checking status for {flow_id}: {e}")
+            _logger.warning("Timeout while checking status for %s: %s", flow_id, e)
             raise RuntimeError(f"FileScan API request timed out. Please try again.") from e
 
     async def get_report(
@@ -199,7 +208,7 @@ class FileScanService:
         state = status.get("state", "")
         all_finished = status.get("allFinished", False)
         
-        print(f"[FileScan] Full analysis check for {flow_id}: state='{state}', allFinished={all_finished}")
+        _logger.debug("FileScan full analysis check for %s: state='%s', allFinished=%s", flow_id, state, all_finished)
         
         if state != "finished" or not all_finished:
             raise RuntimeError(f"Scan {flow_id} is not finished yet (state: {state}, allFinished: {all_finished})")
@@ -215,14 +224,14 @@ class FileScanService:
         # Extract file hash from the unfiltered report
         file_hash = self._extract_hash(status_report)
         if not file_hash:
-            print(f"[FileScan] DEBUG: report_id={report_id}, report_keys={list(status_report.keys())}")
-            print(f"[FileScan] DEBUG: file field={status_report.get('file')}")
-            print(f"[FileScan] DEBUG: hash field={status_report.get('hash')}")
-            print(f"[FileScan] DEBUG: inputFileHash field={status_report.get('inputFileHash')}")
-            print(f"[FileScan] DEBUG: Full report structure: {status_report}")
+            _logger.debug("FileScan debug report for %s: keys=%s", report_id, list(status_report.keys()))
+            _logger.debug("File field=%s", status_report.get("file"))
+            _logger.debug("hash field=%s", status_report.get("hash"))
+            _logger.debug("inputFileHash field=%s", status_report.get("inputFileHash"))
+            _logger.debug("Full report structure: %s", status_report)
             raise RuntimeError("Could not determine file hash from scan report")
 
-        print(f"[FileScan] Found file hash: {file_hash[:16]}... for report {report_id}")
+        _logger.info("Found file hash for report %s: %s...", report_id, file_hash[:16])
 
         # Use the unfiltered status report as base, optionally enhance with filtered data
         full_report = status_report
@@ -236,9 +245,9 @@ class FileScanService:
             if detailed_report:
                 # Merge filtered details into the base report
                 full_report = {**status_report, **detailed_report}
-                print(f"[FileScan] Enhanced report with filtered details")
+                _logger.info("Enhanced report with filtered details for %s", report_id)
         except Exception as exc:
-            print(f"[FileScan] Could not fetch detailed report (using unfiltered data): {exc}")
+            _logger.exception("Could not fetch detailed report for %s (using unfiltered data): %s", report_id, exc)
 
         # Similarity search (best-effort)
         similar_files: list = []

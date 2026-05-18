@@ -4,6 +4,9 @@ import json
 import time
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.robust_model")
 
 
 class RobustModelService:
@@ -82,7 +85,7 @@ class RobustModelService:
         Returns:
             Dictionary with response and metadata
         """
-        print(f"🤖 Starting enhanced model request for {section_name} (Analysis: {analysis_id})")
+        _logger.info("Starting enhanced model request for %s (Analysis: %s)", section_name, analysis_id)
         
         # Update quality requirements if JSON is required
         current_quality = self.quality_thresholds.copy()
@@ -102,7 +105,7 @@ class RobustModelService:
                 
             # Check if model is in cooldown due to rate limits
             if self._is_model_in_cooldown(model_name):
-                print(f"   ⏸️  {model_name} in cooldown, skipping...")
+                _logger.info("%s in cooldown, skipping...", model_name)
                 continue
             
             # Try this model with retries
@@ -111,7 +114,7 @@ class RobustModelService:
                 if total_attempts > self.fallback_config["max_total_attempts"]:
                     break
                     
-                print(f"   🔄 Attempt {total_attempts}: {model_name} (retry {attempt + 1})")
+                _logger.info("Attempt %d: %s (retry %d)", total_attempts, model_name, attempt + 1)
                 
                 try:
                     start_time = time.time()
@@ -139,8 +142,12 @@ class RobustModelService:
                             response_time, validation_result["quality_score"]
                         )
                         
-                        print(f"   ✅ {model_name} succeeded in {response_time:.2f}s "
-                              f"(quality: {validation_result['quality_score']:.2f})")
+                        _logger.info(
+                            "%s succeeded in %.2fs (quality: %.2f)",
+                            model_name,
+                            response_time,
+                            validation_result["quality_score"],
+                        )
                         
                         # Enhance result with metadata
                         enhanced_result = self._enhance_result_with_metadata(
@@ -158,7 +165,7 @@ class RobustModelService:
                 except asyncio.TimeoutError:
                     error_msg = f"Request timeout after {self.fallback_config['response_timeout']}s"
                     self._record_failure(model_name, analysis_id, section_name, error_msg)
-                    print(f"   ⏰ {model_name} timeout")
+                    _logger.warning("%s timeout", model_name)
                     
                 except Exception as e:
                     error_msg = str(e)
@@ -167,13 +174,13 @@ class RobustModelService:
                     # Check error type and handle accordingly
                     if self._is_rate_limit_error(error_msg):
                         self._handle_rate_limit(model_name, error_msg)
-                        print(f"   🚫 {model_name} rate limited - cooldown activated")
+                        _logger.warning("%s rate limited - cooldown activated", model_name)
                         break  # Don't retry this model immediately
                     elif self._is_model_loading_error(error_msg):
-                        print(f"   🔄 {model_name} loading - will retry after delay")
+                        _logger.info("%s loading - will retry after delay", model_name)
                         await asyncio.sleep(10 * (attempt + 1))  # Longer delay for loading
                     else:
-                        print(f"   ❌ {model_name} failed: {error_msg[:100]}...")
+                        _logger.error("%s failed: %s", model_name, error_msg[:200])
                         await asyncio.sleep(self.fallback_config["retry_delay_base"] * (attempt + 1))
                 
                 # Update reliability score based on failure
@@ -184,7 +191,7 @@ class RobustModelService:
         
         # Return last valid response if available, otherwise raise error
         if last_valid_response:
-            print(f"   ⚠️  All models failed, returning last valid response from {best_model_used}")
+                _logger.warning("All models failed, returning last valid response from %s", best_model_used)
             return last_valid_response
         
         raise Exception(f"All models failed for {section_name}. Error summary: {error_summary}")
@@ -213,7 +220,7 @@ class RobustModelService:
         if section_name in ["behavior_analysis", "strings_analysis"]:
             models = self._prioritize_high_context_models(models)
         
-        print(f"   📋 Model priority for {section_name}: {models[:3]}...")  # Show top 3
+        _logger.debug("Model priority for %s: %s...", section_name, models[:3])
         return models
 
     def _prioritize_high_context_models(self, models: List[str]) -> List[str]:

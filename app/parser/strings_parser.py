@@ -4,6 +4,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.parser.strings")
 
 
 @dataclass
@@ -200,27 +203,27 @@ def extract_dropped_strings(data: Any) -> List[str]:
 
 
 def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
-    print(f"Processing with whitelist: {report_path.name}")
+    _logger.info("Processing with whitelist: %s", report_path.name)
 
     try:
         with open(report_path, "r", encoding="utf-8", errors="ignore") as file:
             data = json.load(file)
     except Exception as error:
-        print(f"Error loading JSON: {error}")
+        _logger.exception("Error loading JSON: %s", error)
         sys.exit(1)
 
-    print("Extracting strings from sections...")
+    _logger.info("Extracting strings from sections...")
     all_strings = extract_all_strings(data)
     target_strings = extract_target_strings(data)
     dropped_strings = extract_dropped_strings(data)
 
     combined_strings = list(set(all_strings + target_strings + dropped_strings))
 
-    print(f"    - Total unique strings: {len(combined_strings)}")
-    print(f"    - Target section strings: {len(target_strings)}")
-    print(f"    - Dropped section strings: {len(dropped_strings)}")
+    _logger.info("Total unique strings: %d", len(combined_strings))
+    _logger.info("Target section strings: %d", len(target_strings))
+    _logger.info("Dropped section strings: %d", len(dropped_strings))
 
-    print("Applying whitelist filtering...")
+    _logger.info("Applying whitelist filtering...")
     filter_engine = WhitelistFilter()
     clean_strings = []
     garbage_count = 0
@@ -250,18 +253,22 @@ def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
     total_processed = len(combined_strings)
     clean_count = len(clean_strings)
 
-    print("Whitelist filtering complete:")
-    print(f"    - Total processed: {total_processed:,}")
-    print(
-        f"    - Whitelisted (clean): {clean_count:,} ({clean_count / total_processed * 100:.1f}%)"
+    _logger.info("Whitelist filtering complete")
+    _logger.info("Total processed: %s", f"{total_processed:,}")
+    _logger.info(
+        "Whitelisted (clean): %s (%.1f%%)",
+        f"{clean_count:,}",
+        clean_count / total_processed * 100,
     )
-    print(
-        f"    - Garbage removed: {garbage_count:,} ({garbage_count / total_processed * 100:.1f}%)"
+    _logger.info(
+        "Garbage removed: %s (%.1f%%)",
+        f"{garbage_count:,}",
+        garbage_count / total_processed * 100,
     )
-    print(f"    - Categories found: {len(categories)}")
+    _logger.info("Categories found: %d", len(categories))
 
     for category, strings in categories.items():
-        print(f"        {category}: {len(strings)} strings")
+        _logger.info("%s: %d strings", category, len(strings))
 
     return WhitelistResults(
         clean_strings=sorted(clean_strings),
@@ -288,14 +295,12 @@ def save_results(results: WhitelistResults, output_path: Path):
     with open(output_path, "w", encoding="utf-8") as file:
         json.dump(output_data, file, indent=2, ensure_ascii=False)
 
-    print(f"Whitelist results saved to: {output_path}")
+    _logger.info("Whitelist results saved to: %s", output_path)
 
 
 def main():
     if len(sys.argv) < 2:
-        print(
-            "Usage: python strings_model_whitelist.py <cape_report.json> [output.json]"
-        )
+        _logger.info("Usage: python strings_model_whitelist.py <cape_report.json> [output.json]")
         sys.exit(1)
 
     report_path = Path(sys.argv[1])
@@ -306,18 +311,18 @@ def main():
     )
 
     if not report_path.exists():
-        print(f"File not found: {report_path}")
+        _logger.error("File not found: %s", report_path)
         sys.exit(1)
 
     results = process_whitelist_filtering(report_path)
     save_results(results, output_path)
 
-    print("\nSample whitelisted strings by category:")
+    _logger.info("Sample whitelisted strings by category:")
     for category, strings in results.categories.items():
-        print(f"\n  {category.upper()}:")
+        _logger.info("%s:", category.upper())
         for i, string in enumerate(strings[:3]):
             display = string if len(string) <= 60 else string[:57] + "..."
-            print(f"    {i + 1}. {display}")
+            _logger.info("%d. %s", i + 1, display)
 
 
 if __name__ == "__main__":

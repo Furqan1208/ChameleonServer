@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Optional
 
 from toon_python import encode
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.toon")
 
 
 class ToonService:
@@ -23,11 +26,11 @@ class ToonService:
             return output_path
 
         except json.JSONDecodeError as e:
-            print(f"Error parsing JSON file: {e}", file=sys.stderr)
+            _logger.exception("Error parsing JSON file: %s", e)
             raise RuntimeError(f"Invalid JSON file: {e}") from e
         except FileNotFoundError:
-            print(f"File not found: {file_path}", file=sys.stderr)
+            _logger.exception("File not found: %s", file_path)
             raise RuntimeError(f"File not found: {file_path}") from None
         except Exception as e:
-            print(f"Error during TOON encoding: {e}", file=sys.stderr)
+            _logger.exception("Error during TOON encoding: %s", e)
             raise RuntimeError(f"Failed to encode report data to TOON: {e}") from e

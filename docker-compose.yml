@@ -3,26 +3,78 @@ version: "3.8"
 services:
   api:
     build: .
+    container_name: chameleon-api
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
-      - .:/app
+      - ./analysis_reports:/app/analysis_reports
+      - ./logs:/app/logs
+      - ./dataset:/app/dataset:ro
     environment:
+      # MongoDB Configuration
       - MONGODB_URI=mongodb://mongodb:27017/
-      - DB_NAME=fyp
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - OPEN_ROUTER_API=${OPEN_ROUTER_API}
+      - DB_NAME=chameleon_db
+      
+      # JWT Security (REQUIRED: Set a strong random key)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?error: JWT_SECRET_KEY must be set}
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      
+      # External APIs
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - MISP_API_KEY=${MISP_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      
+      # CAPE Sandbox (if external)
+      - CAPE_API_URL=${CAPE_API_URL:-http://localhost:8000/apiv2/}
+      - CAPE_API_TOKEN=${CAPE_API_TOKEN:-}
+      
+      # Feature Flags
+      - DEFAULT_AI_MODEL=gemini-2.5-flash
+      - ENABLED_MODELS=gpt-oss-20b,gemini,llama,mistral,deepseek,qwen,phi3
+      
+      # Security
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - UPLOAD_FILE_SIZE_LIMIT=104857600
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW=900
     depends_on:
       - mongodb
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - chameleon-network
 
   mongodb:
-    image: mongo:6.0
+    image: mongo:6.0-alpine
+    container_name: chameleon-db
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-    restart: always
+      - mongodb_config:/data/configdb
+    environment:
+      - MONGO_INITDB_DATABASE=chameleon_db
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chameleon-network
 
 volumes:
   mongodb_data:
+  mongodb_config:
+
+networks:
+  chameleon-network:
+    driver: bridge

@@ -4,6 +4,9 @@ from typing import Optional
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.database")
 
 
 class DatabaseService:
@@ -59,19 +62,32 @@ class DatabaseService:
     async def save_cape_results(
         self, user_id: str, analysis_id: str, cape_data: dict
     ) -> bool:
-        """Save CAPE analysis results"""
+        """Save CAPE analysis results. Stores metadata in MongoDB and full report in file system."""
         try:
             if not await self._verify_ownership(user_id, analysis_id):
                 return False
 
+            # Extract lightweight metadata only (full CAPE data stored in file system)
+            # This avoids BSON size limit (16MB) exceeded by large CAPE reports
             document = {
                 "analysis_id": analysis_id,
-                "data": cape_data,
+                "has_cape": True,
+                "target_name": cape_data.get("info", {}).get("name", "unknown"),
+                "target_type": cape_data.get("info", {}).get("type", "unknown"),
+                "malscore": cape_data.get("info", {}).get("score", 0),
+                "signatures_count": len(cape_data.get("signatures", [])),
+                "processes_count": len(cape_data.get("behavior", {}).get("processes", [])),
                 "created_at": datetime.now(),
             }
 
-            await self.cape_collection.insert_one(document)
+            try:
+                await self.cape_collection.insert_one(document)
+            except Exception as e:
+                # Even if MongoDB save fails, still mark cape as available 
+                # (full report is saved in file system)
+                _logger.warning("Failed to save CAPE metadata to MongoDB: %s. Report available in file system.", str(e))
 
+            # Always mark CAPE component as available (file system backup ensures it exists)
             await self.analyses_collection.update_one(
                 {"analysis_id": analysis_id},
                 {"$set": {"components.cape": True, "updated_at": datetime.now()}},
@@ -79,7 +95,7 @@ class DatabaseService:
 
             return True
         except Exception as e:
-            print(f"Error saving CAPE results: {str(e)}")
+            _logger.exception("Error saving CAPE results: %s", str(e))
             return False
 
     async def save_parsed_results(
@@ -114,7 +130,7 @@ class DatabaseService:
 
             return True
         except Exception as e:
-            print(f"Error saving parsed results: {str(e)}")
+            _logger.exception("Error saving parsed results: %s", str(e))
             return False
 
     async def save_ai_results(
@@ -156,7 +172,52 @@ class DatabaseService:
 
             return True
         except Exception as e:
-            print(f"Error saving AI results: {str(e)}")
+            _logger.exception("Error saving AI results: %s", str(e))
+            return False
+
+    # ✅ NEW METHOD: Save threat intelligence results
+    async def save_threat_intel(
+        self,
+        user_id: str,
+        analysis_id: str,
+        threat_intel_data: dict,
+    ) -> bool:
+        """Save threat intelligence results to the analysis record"""
+        try:
+            if not await self._verify_ownership(user_id, analysis_id):
+                return False
+
+            # Store threat intel in a dedicated collection
+            ti_collection = self.db["threat_intel_results"]
+            
+            document = {
+                "analysis_id": analysis_id,
+                "user_id": ObjectId(user_id),
+                "results": threat_intel_data.get("results", {}),
+                "summary": threat_intel_data.get("summary", {}),
+                "input": threat_intel_data.get("input", ""),
+                "input_type": threat_intel_data.get("input_type", ""),
+                "timestamp": threat_intel_data.get("timestamp", datetime.utcnow().isoformat()),
+                "created_at": datetime.now(),
+            }
+
+            await ti_collection.insert_one(document)
+
+            # Update the main analysis record to mark threat intel as available
+            await self.analyses_collection.update_one(
+                {"analysis_id": analysis_id},
+                {
+                    "$set": {
+                        "components.threat_intel": True,
+                        "updated_at": datetime.now(),
+                    }
+                },
+            )
+
+            _logger.info("Threat intel saved for analysis %s", analysis_id)
+            return True
+        except Exception as e:
+            _logger.exception("Error saving threat intel: %s", str(e))
             return False
 
     async def update_analysis_status(
@@ -178,7 +239,7 @@ class DatabaseService:
 
             return True
         except Exception as e:
-            print(f"Error updating analysis status: {str(e)}")
+            _logger.exception("Error updating analysis status: %s", str(e))
             return False
 
     # -------------------------------------------------------------------------
@@ -222,6 +283,19 @@ class DatabaseService:
             {"analysis_id": analysis_id}, {"_id": 0}
         )
 
+    # ✅ NEW METHOD: Get threat intel results
+    async def get_threat_intel(
+        self, user_id: str, analysis_id: str
+    ) -> Optional[dict]:
+        """Get threat intelligence results, ownership verified via analyses collection"""
+        if not await self._verify_ownership(user_id, analysis_id):
+            return None
+
+        ti_collection = self.db["threat_intel_results"]
+        return await ti_collection.find_one(
+            {"analysis_id": analysis_id}, {"_id": 0}
+        )
+
     async def get_all_analyses(
         self, user_id: str, limit: int = 100, skip: int = 0
     ) -> list:
@@ -236,7 +310,49 @@ class DatabaseService:
             .limit(limit)
         )
 
-        return await cursor.to_list(length=limit)
+        analyses = await cursor.to_list(length=limit)
+
+        # Backfill missing malscore from file system parsed output when available.
+        # This handles older analyses produced before malscore was stored in DB.
+        from app.services.report_structure_service import report_structure_service
+
+        for a in analyses:
+            try:
+                if not a.get("malscore"):
+                    analysis_id = a.get("analysis_id")
+                    if not analysis_id:
+                        continue
+
+                    parsed_file = (
+                        report_structure_service.base_dir / analysis_id / "parsed" / "combined.json"
+                    )
+                    if parsed_file.exists():
+                        try:
+                            combined = report_structure_service.load_json(parsed_file)
+                            malscore = (
+                                combined.get("sections", {})
+                                .get("signatures", {})
+                                .get("malscore")
+                            )
+                            if malscore is not None:
+                                a["malscore"] = malscore
+                                # Persist back to DB for future calls
+                                try:
+                                    await self.analyses_collection.update_one(
+                                        {"analysis_id": analysis_id},
+                                        {"$set": {"malscore": malscore}},
+                                    )
+                                except Exception:
+                                    # Best-effort write; ignore failures
+                                    pass
+                        except Exception:
+                            # ignore parse/read errors and continue
+                            pass
+            except Exception:
+                # Protect listing from any unexpected exception per-item
+                continue
+
+        return analyses
 
     async def get_complete_analysis(
         self, user_id: str, analysis_id: str
@@ -253,6 +369,7 @@ class DatabaseService:
             "cape": None,
             "parsed": None,
             "ai_analysis": None,
+            "threat_intel": None,  # ✅ Added threat_intel
         }
 
         components = analysis.get("components", {})
@@ -272,6 +389,13 @@ class DatabaseService:
                 {"analysis_id": analysis_id}, {"_id": 0}
             )
 
+        # ✅ Fetch threat intel if available
+        if components.get("threat_intel"):
+            ti_collection = self.db["threat_intel_results"]
+            result["threat_intel"] = await ti_collection.find_one(
+                {"analysis_id": analysis_id}, {"_id": 0}
+            )
+
         return result
 
     # -------------------------------------------------------------------------
@@ -287,6 +411,10 @@ class DatabaseService:
             await self.cape_collection.delete_one({"analysis_id": analysis_id})
             await self.parsed_collection.delete_one({"analysis_id": analysis_id})
             await self.ai_collection.delete_one({"analysis_id": analysis_id})
+            
+            # ✅ Also delete threat intel
+            ti_collection = self.db["threat_intel_results"]
+            await ti_collection.delete_one({"analysis_id": analysis_id})
 
             result = await self.analyses_collection.delete_one(
                 {"analysis_id": analysis_id}
@@ -294,7 +422,7 @@ class DatabaseService:
 
             return result.deleted_count > 0
         except Exception as e:
-            print(f"Error deleting analysis: {str(e)}")
+            _logger.exception("Error deleting analysis: %s", str(e))
             return False
 
     # -------------------------------------------------------------------------

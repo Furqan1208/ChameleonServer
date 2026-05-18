@@ -27,6 +27,7 @@ class AIAnalysisService:
         model_name: Optional[str] = None,
         enable_parallel: bool = True,
         max_parallel_sections: int = 4,
+        threat_intel_context: Optional[Dict] = None,  # ✅ NEW PARAMETER
     ) -> Dict[str, Any]:
         """
         Perform full malware analysis with optional parallel processing.
@@ -36,6 +37,7 @@ class AIAnalysisService:
             model_name: Preferred AI model
             enable_parallel: Enable parallel section processing
             max_parallel_sections: Max sections to process simultaneously
+            threat_intel_context: Threat intelligence results for contextual analysis  # ✅ NEW
         """
         analysis_id = self._generate_analysis_id()
 
@@ -45,6 +47,15 @@ class AIAnalysisService:
         else:
             print("🔄 Sequential mode")
 
+        # ✅ Log threat intel status
+        if threat_intel_context:
+            print(
+                f"🔍 Threat Intel context available: "
+                f"{threat_intel_context.get('summary_line', 'Summary unavailable')}"
+            )
+        else:
+            print("⚠️  No threat intel context provided - AI may hallucinate scores")
+
         start_time = datetime.now()
 
         chunking_summary = self.chunking_service.analyze_chunking_requirements(
@@ -53,11 +64,18 @@ class AIAnalysisService:
 
         if enable_parallel:
             analyses, model_usage = await self._analyze_parallel(
-                parsed_results, model_name, analysis_id, max_parallel_sections
+                parsed_results,
+                model_name,
+                analysis_id,
+                max_parallel_sections,
+                threat_intel_context,  # ✅ Pass through
             )
         else:
             analyses, model_usage = await self._analyze_sequential(
-                parsed_results, model_name, analysis_id
+                parsed_results,
+                model_name,
+                analysis_id,
+                threat_intel_context,  # ✅ Pass through
             )
 
         end_time = datetime.now()
@@ -77,6 +95,7 @@ class AIAnalysisService:
             "chunking_summary": chunking_summary,
             "duration_seconds": duration,
             "api_key_stats": api_stats,
+            "threat_intel_used": threat_intel_context is not None,  # ✅ Include in response
             "results": analyses,
         }
 
@@ -86,6 +105,7 @@ class AIAnalysisService:
         model_name: Optional[str],
         analysis_id: str,
         max_parallel: int,
+        threat_intel_context: Optional[Dict] = None,  # ✅ NEW PARAMETER
     ) -> tuple[Dict[str, Any], Dict[str, int]]:
         """Analyze sections in parallel where possible."""
 
@@ -123,6 +143,7 @@ class AIAnalysisService:
                         previous_analyses=analyses,
                         model_name=model_name,
                         analysis_id=analysis_id,
+                        threat_intel_context=threat_intel_context,  # ✅ Pass through
                     )
 
                     status = "✓" if "error" not in result else "✗"
@@ -163,6 +184,7 @@ class AIAnalysisService:
         parsed_results: Dict,
         model_name: Optional[str],
         analysis_id: str,
+        threat_intel_context: Optional[Dict] = None,  # ✅ NEW PARAMETER
     ) -> tuple[Dict[str, Any], Dict[str, int]]:
         """Original sequential analysis."""
         analyses = {}
@@ -175,7 +197,12 @@ class AIAnalysisService:
             print(f"Analyzing: {section_name}")
 
             result = await self.section_analyzer.analyze_section(
-                section_config, parsed_results, analyses, model_name, analysis_id
+                section_config=section_config,
+                parsed_results=parsed_results,
+                previous_analyses=analyses,
+                model_name=model_name,
+                analysis_id=analysis_id,
+                threat_intel_context=threat_intel_context,  # ✅ Pass through
             )
 
             if "ai_model" in result:

@@ -3,6 +3,9 @@ import os
 from datetime import datetime
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.threatfox")
 
 
 class ThreatFoxService:
@@ -16,7 +19,7 @@ class ThreatFoxService:
     def __init__(self):
         self.api_key = os.getenv("THREATFOX_API_KEY", "")
         if not self.api_key:
-            print("WARNING: THREATFOX_API_KEY not set — using anonymous access")
+            _logger.warning("THREATFOX_API_KEY not set — using anonymous access")
 
     @property
     def _headers(self) -> dict:
@@ -85,7 +88,7 @@ class ThreatFoxService:
                     return []
                 return [item for item in raw_data if isinstance(item, dict)][:limit]
             except Exception as e:
-                print(f"[ThreatFox] get_recent_iocs error: {e}")
+                _logger.exception("[ThreatFox] get_recent_iocs error: %s", e)
                 return []
 
     async def get_malware_list(self) -> dict:
@@ -100,7 +103,7 @@ class ThreatFoxService:
                     return {}
                 return resp.json().get("data", {})
             except Exception as e:
-                print(f"[ThreatFox] get_malware_list error: {e}")
+                _logger.exception("[ThreatFox] get_malware_list error: %s", e)
                 return {}
 
     # -------------------------------------------------------------------------

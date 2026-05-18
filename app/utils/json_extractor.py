@@ -11,7 +11,8 @@ class JSONExtractor:
         cleaned = response.strip()
 
         try:
-            return json.loads(cleaned)
+            parsed = json.loads(cleaned)
+            return self._resolve_nested_json(parsed)
         except json.JSONDecodeError:
             pass
 
@@ -39,7 +40,7 @@ class JSONExtractor:
             try:
                 json_text = self._clean_json(candidate)
                 parsed = json.loads(json_text)
-                return parsed
+                return self._resolve_nested_json(parsed)
             except json.JSONDecodeError:
                 continue
 
@@ -59,6 +60,47 @@ class JSONExtractor:
             "raw_preview": cleaned[:500] if cleaned else "Empty",
             "response_length": len(cleaned),
         }
+
+    def _resolve_nested_json(self, obj: Any, max_depth: int = 5) -> Any:
+        """
+        Recursively resolve string values that contain JSON.
+        This handles responses shaped like {"overview": "{...}"}.
+        """
+        if max_depth <= 0:
+            return obj
+
+        if isinstance(obj, dict):
+            return {
+                key: self._resolve_nested_json(value, max_depth - 1)
+                for key, value in obj.items()
+            }
+
+        if isinstance(obj, list):
+            return [self._resolve_nested_json(item, max_depth - 1) for item in obj]
+
+        if isinstance(obj, str):
+            stripped = obj.strip()
+            stripped = re.sub(r'^```(?:json)?\s*', '', stripped)
+            stripped = re.sub(r'\s*```$', '', stripped)
+
+            if stripped.startswith(("{", "[")):
+                try:
+                    parsed = json.loads(stripped)
+                    return self._resolve_nested_json(parsed, max_depth - 1)
+                except json.JSONDecodeError:
+                    pass
+
+            if '\\"' in obj and obj.startswith(("{", "[")):
+                try:
+                    unescaped = obj.replace('\\"', '"').replace('\\\\', '\\')
+                    parsed = json.loads(unescaped)
+                    return self._resolve_nested_json(parsed, max_depth - 1)
+                except json.JSONDecodeError:
+                    pass
+
+            return obj
+
+        return obj
 
     def _clean_json(self, text: str) -> str:
         text = text.strip()

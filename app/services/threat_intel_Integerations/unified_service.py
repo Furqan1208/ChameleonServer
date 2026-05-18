@@ -1,3 +1,4 @@
+# C:\Final Year Project\ChameleonServer\app\services\threat_intel_Integerations\unified_service.py
 import asyncio
 import re
 from datetime import datetime
@@ -51,6 +52,82 @@ class UnifiedThreatIntelService:
         self.threatfox = ThreatFoxService()
         self.filescan = FileScanService()
         self.hybrid_analysis = HybridAnalysisService()
+
+    def minimal_summary_for_ai(self, results: dict) -> dict:
+        """
+        Produce a compact, minimal summary of the unified threat-intel results
+        suitable for inclusion in AI prompts. Keeps only high-signal fields.
+        """
+        minimal = {}
+
+        # VirusTotal
+        vt = results.get("virustotal") if isinstance(results, dict) else None
+        if vt and vt.get("success") and vt.get("data"):
+            d = vt["data"]
+            minimal["virustotal"] = {
+                "found": d.get("found", False),
+                "detection_stats": d.get("detection_stats", {}),
+                "threat_score": d.get("threat_score", 0),
+                "file_info": d.get("file_info", {}),
+                "vt_url": d.get("vt_url"),
+            }
+        else:
+            minimal["virustotal"] = {"found": False}
+
+        # MalwareBazaar
+        mb = results.get("malwarebazaar") if isinstance(results, dict) else None
+        if mb and mb.get("success") and mb.get("data"):
+            md = mb["data"]
+            minimal["malwarebazaar"] = {
+                "found": md.get("found", False),
+                "total": md.get("total", 0),
+                "samples": [
+                    {"sha256": s.get("sha256"), "filename": s.get("filename")}
+                    for s in (md.get("samples") or [])[:5]
+                ],
+            }
+        else:
+            minimal["malwarebazaar"] = {"found": False}
+
+        # Hybrid Analysis
+        ha = results.get("hybrid_analysis") if isinstance(results, dict) else None
+        if ha and ha.get("success") and ha.get("data"):
+            hd = ha["data"]
+            minimal["hybrid_analysis"] = {
+                "found": hd.get("found", False),
+                "verdict": hd.get("verdict"),
+                "verdict_numeric": hd.get("verdict_numeric"),
+                "threat_score": hd.get("threat_score", 0),
+                "reports": [
+                    {"id": r.get("id"), "verdict": r.get("verdict")}
+                    for r in (hd.get("reports") or [])[:3]
+                ],
+            }
+        else:
+            minimal["hybrid_analysis"] = {"found": False}
+
+        # AlienVault OTX
+        otx = results.get("alienvault") if isinstance(results, dict) else None
+        if otx and otx.get("success") and otx.get("data"):
+            od = otx["data"]
+            minimal["alienvault"] = {
+                "found": od.get("found", False),
+                "pulse_count": od.get("pulse_count", 0),
+                "reputation": od.get("reputation", 0),
+                "malware_families": od.get("malware_families", [])[:5],
+            }
+        else:
+            minimal["alienvault"] = {"found": False}
+
+        # Add a terse summary line
+        minimal["summary_line"] = (
+            f"VT:{minimal['virustotal'].get('threat_score',0)} "
+            f"HA:{minimal['hybrid_analysis'].get('threat_score',0)} "
+            f"MB:{minimal['malwarebazaar'].get('total',0)} "
+            f"OTX:{minimal['alienvault'].get('pulse_count',0)}"
+        )
+
+        return minimal
 
     # -------------------------------------------------------------------------
     # Input type detection

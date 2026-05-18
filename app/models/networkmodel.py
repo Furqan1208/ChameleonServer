@@ -1,6 +1,14 @@
+"""
+Network Processing Model - Complete representation of Network section data
+"""
+
 from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
+
+# ============================================================
+# Helper Models
+# ============================================================
 
 class HostInfo(BaseModel):
     """Information about a contacted host/IP."""
@@ -21,7 +29,7 @@ class DomainInfo(BaseModel):
     """Information about a domain lookup."""
     
     domain: str
-    ip: Optional[str] = None  # IP resolved for the domain
+    ip: Optional[str] = None
     
     class Config:
         extra = "allow"
@@ -58,7 +66,11 @@ class UDPConnection(BaseModel):
 class ICMPConnection(BaseModel):
     """ICMP network connection details."""
     
-    # Define fields if needed, currently empty in example
+    src: Optional[str] = None
+    dst: Optional[str] = None
+    type: Optional[int] = None
+    code: Optional[int] = None
+    
     class Config:
         extra = "allow"
 
@@ -88,6 +100,7 @@ class DNSAnswer(BaseModel):
     
     type: str
     data: str
+    ttl: Optional[int] = None
     
     class Config:
         extra = "allow"
@@ -111,19 +124,15 @@ class DeadHost(BaseModel):
     ip: str
     port: int
     
-    def __init__(self, **data):
-        # Handle case where dead_hosts are provided as list of [ip, port]
-        if isinstance(data.get('data'), (list, tuple)) and len(data['data']) == 2:
-            super().__init__(ip=data['data'][0], port=data['data'][1])
-        else:
-            super().__init__(**data)
+    class Config:
+        extra = "allow"
 
 
 class SortedConnections(BaseModel):
     """Sorted network connections structure."""
     
     tcp: List[TCPConnection] = Field(default_factory=list)
-    # Add other protocol types if they appear in sorted data
+    udp: List[UDPConnection] = Field(default_factory=list)
     
     class Config:
         extra = "allow"
@@ -138,13 +147,14 @@ class PCAPNGInfo(BaseModel):
         extra = "allow"
 
 
+# ============================================================
+# Main Network Model
+# ============================================================
+
 class NetworkModel(BaseModel):
     """
     Comprehensive network analysis results from CAPE/Cuckoo.
-    
-    Contains all network-related data collected during analysis including
-    PCAP hashes, hosts contacted, domains resolved, protocol-specific
-    connections, HTTP traffic, DNS queries, and sorted packet data.
+    Contains all network-related data collected during analysis.
     """
     
     # PCAP file information
@@ -169,19 +179,19 @@ class NetworkModel(BaseModel):
     # Additional network information
     dead_hosts: List[DeadHost] = Field(default_factory=list, description="Unreachable hosts")
     
-    # Sorted packet data (often with different timestamps)
+    # Sorted packet data (with different timestamps)
     sorted: Optional[SortedConnections] = Field(None, description="Sorted packet connections")
     
-    # PCAPNG file information (if available)
+    # PCAPNG file information
     pcapng: Optional[PCAPNGInfo] = Field(None, description="PCAPNG file information")
     
-    # Allow any additional fields that might appear in different report versions
+    # Allow any additional fields
     additional: Dict[str, Any] = Field(default_factory=dict)
     
     @model_validator(mode='before')
     @classmethod
     def preprocess_dead_hosts(cls, values):
-        """Convert dead_hosts list-of-lists to list-of-dicts before Pydantic validates them."""
+        """Convert dead_hosts list-of-lists to list-of-dicts before validation."""
         if isinstance(values, dict) and "dead_hosts" in values:
             raw = values["dead_hosts"]
             if isinstance(raw, list):
@@ -197,30 +207,115 @@ class NetworkModel(BaseModel):
     class Config:
         extra = "allow"
         populate_by_name = True
-    
-    def model_post_init(self, __context):
-        """Post-initialization processing to handle special cases."""
-        # Convert dead_hosts if they're provided as list of lists
-        if hasattr(self, 'dead_hosts') and self.dead_hosts:
-            processed = []
-            for item in self.dead_hosts:
-                if isinstance(item, (list, tuple)) and len(item) == 2:
-                    processed.append(DeadHost(ip=item[0], port=item[1]))
-                elif isinstance(item, dict):
-                    processed.append(DeadHost(**item))
-                else:
-                    processed.append(item)
-            self.dead_hosts = processed
-        return super().model_post_init(__context)
 
 
 class NetworkTopLevel(BaseModel):
     """
     Top-level network structure as it appears in the CAPE report.
-    This matches the exact structure shown in the example data.
     """
     
     network: NetworkModel = Field(..., description="Network analysis results")
     
     class Config:
         extra = "allow"
+
+
+# ============================================================
+# AI Summary Model (Compact for LLM)
+# ============================================================
+
+class NetworkAISummary(BaseModel):
+    """
+    Compact summary of network data for AI consumption.
+    Contains key indicators extracted from the full data.
+    """
+    
+    # === Overview ===
+    has_network_activity: bool = False
+    
+    # === Domains (Critical IOCs - KEEP ALL) ===
+    domains: List[str] = Field(default_factory=list, description="All domains contacted")
+    
+    # === IPs (Critical IOCs - KEEP ALL) ===
+    ips: List[str] = Field(default_factory=list, description="All IPs contacted")
+    
+    # === DNS Queries ===
+    dns_queries: List[Dict[str, Any]] = Field(default_factory=list, description="DNS requests and answers")
+    
+    # === HTTP Requests ===
+    http_requests: List[Dict[str, Any]] = Field(default_factory=list, description="HTTP requests (summary)")
+    
+    # === Dead Hosts ===
+    dead_hosts: List[Dict[str, int]] = Field(default_factory=list, description="Unreachable hosts")
+    
+    # === Statistics ===
+    total_tcp_connections: int = 0
+    total_udp_connections: int = 0
+    total_dns_queries: int = 0
+    total_http_requests: int = 0
+    
+    # === Suspicious Indicators ===
+    has_suspicious_domains: bool = False
+    suspicious_domain_keywords: List[str] = Field(default_factory=list)
+    has_https_traffic: bool = False
+    has_dns_traffic: bool = False
+    
+    # === Country Distribution ===
+    contacted_countries: List[str] = Field(default_factory=list)
+    
+    # === Quick Assessment ===
+    quick_summary: str = ""
+    
+    def generate_summary(self):
+        """Generate quick summary string."""
+        parts = []
+        
+        if self.domains:
+            parts.append(f"Domains: {len(self.domains)}")
+            if self.domains:
+                parts.append(f"Top domain: {self.domains[0][:50]}")
+        
+        if self.ips:
+            parts.append(f"IPs: {len(self.ips)}")
+        
+        if self.http_requests:
+            parts.append(f"HTTP: {len(self.http_requests)}")
+        
+        if self.dns_queries:
+            parts.append(f"DNS: {len(self.dns_queries)}")
+        
+        if self.dead_hosts:
+            parts.append(f"Dead hosts: {len(self.dead_hosts)}")
+        
+        if self.contacted_countries:
+            parts.append(f"Countries: {', '.join(self.contacted_countries[:3])}")
+        
+        if self.has_suspicious_domains:
+            parts.append("Suspicious domains detected")
+        
+        self.quick_summary = " | ".join(parts) if parts else "No network activity"
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "has_network_activity": True,
+                "domains": ["www.msftconnecttest.com", "kalyanonlinematkaapp.in.net", "api.kalyanonlinematkaapp.in.net"],
+                "ips": ["108.162.193.193", "104.21.87.11"],
+                "dns_queries": [
+                    {"request": "www.msftconnecttest.com", "type": "A", "answers": []},
+                    {"request": "kalyanonlinematkaapp.in.net", "type": "A", "answers": []}
+                ],
+                "http_requests": [],
+                "dead_hosts": [{"ip": "104.21.87.11", "port": 443}],
+                "total_tcp_connections": 45,
+                "total_udp_connections": 12,
+                "total_dns_queries": 4,
+                "total_http_requests": 0,
+                "has_suspicious_domains": True,
+                "suspicious_domain_keywords": ["kalyan", "matka"],
+                "has_https_traffic": True,
+                "has_dns_traffic": True,
+                "contacted_countries": ["unknown"],
+                "quick_summary": "Domains: 3 | Top domain: kalyanonlinematkaapp.in.net | IPs: 2 | DNS: 4 | Dead hosts: 1 | Suspicious domains detected"
+            }
+        }

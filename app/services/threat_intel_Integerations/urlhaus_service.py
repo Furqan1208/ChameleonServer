@@ -3,6 +3,9 @@ import os
 from datetime import datetime
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.urlhaus")
 
 
 class URLhausService:
@@ -17,7 +20,7 @@ class URLhausService:
         # URLhaus uses the same API key as ThreatFox (optional for most endpoints)
         self.api_key = os.getenv("THREATFOX_API_KEY", "")
         if not self.api_key:
-            print("WARNING: THREATFOX_API_KEY not set — using anonymous URLhaus access")
+            _logger.warning("THREATFOX_API_KEY not set — using anonymous URLhaus access")
 
     @property
     def _headers(self) -> dict:
@@ -87,7 +90,7 @@ class URLhausService:
             except httpx.TimeoutException:
                 raise RuntimeError("URLhaus request timed out.")
             except Exception as e:
-                print(f"[URLhaus] check_url error: {e}")
+                _logger.exception("[URLhaus] check_url error: %s", e)
                 return self._not_found(url, "url", str(e))
 
     async def check_hash(self, hash_value: str) -> dict:
@@ -111,7 +114,7 @@ class URLhausService:
             except httpx.TimeoutException:
                 raise RuntimeError("URLhaus request timed out.")
             except Exception as e:
-                print(f"[URLhaus] check_hash error: {e}")
+                _logger.exception("[URLhaus] check_hash error: %s", e)
                 return self._not_found(hash_value, "hash", str(e))
 
     async def check_host(self, host: str) -> dict:
@@ -135,7 +138,7 @@ class URLhausService:
             except httpx.TimeoutException:
                 raise RuntimeError("URLhaus request timed out.")
             except Exception as e:
-                print(f"[URLhaus] check_host error: {e}")
+                _logger.exception("[URLhaus] check_host error: %s", e)
                 return self._not_found(host, "host", str(e))
 
     async def check_tag(self, tag: str) -> dict:
@@ -159,7 +162,7 @@ class URLhausService:
             except httpx.TimeoutException:
                 raise RuntimeError("URLhaus request timed out.")
             except Exception as e:
-                print(f"[URLhaus] check_tag error: {e}")
+                _logger.exception("[URLhaus] check_tag error: %s", e)
                 return self._not_found(tag, "tag", str(e))
 
     # -------------------------------------------------------------------------

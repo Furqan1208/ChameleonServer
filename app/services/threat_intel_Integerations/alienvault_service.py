@@ -3,6 +3,9 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.alienvault")
 
 
 class AlienVaultOTXService:
@@ -13,7 +16,7 @@ class AlienVaultOTXService:
     def __init__(self):
         self.api_key = os.getenv("ALIENVAULT_OTX_API_KEY", "")
         if not self.api_key:
-            print("WARNING: ALIENVAULT_OTX_API_KEY not set")
+            _logger.warning("ALIENVAULT_OTX_API_KEY not set")
 
     @property
     def _headers(self) -> dict:
@@ -38,8 +41,20 @@ class AlienVaultOTXService:
         except (RuntimeError, httpx.TimeoutException):
             raise
         except Exception as e:
-            print(f"[OTX] Request error {path}: {e}")
+            _logger.exception("[OTX] Request error %s: %s", path, e)
             return None
+
+    @staticmethod
+    def _as_list(value) -> list:
+        if not value:
+                        return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, set):
+            return list(value)
+        return [value]
 
     # -------------------------------------------------------------------------
     # Public entry point
@@ -183,12 +198,19 @@ class AlienVaultOTXService:
         references: list = []
 
         for pulse in pulses[:20]:  # cap to avoid huge payloads
-            tags.update(pulse.get("tags", []))
-            for mf in pulse.get("malware_families", []):
+            tags.update(self._as_list(pulse.get("tags")))
+            for mf in self._as_list(pulse.get("malware_families")):
                 malware_families.add(mf.get("display_name", mf.get("id", "")))
-            for adv in pulse.get("adversary", []):
-                adversaries.add(adv)
-            references.extend(pulse.get("references", [])[:3])
+            for adv in self._as_list(pulse.get("adversary")):
+                if isinstance(adv, dict):
+                    adversary_name = adv.get("name") or adv.get("display_name") or adv.get("id")
+                    if adversary_name:
+                        adversaries.add(adversary_name)
+                elif isinstance(adv, str):
+                    cleaned = adv.strip()
+                    if cleaned:
+                        adversaries.add(cleaned)
+            references.extend(self._as_list(pulse.get("references"))[:3])
 
         threat_level = "unknown"
         if pulse_count > 10:

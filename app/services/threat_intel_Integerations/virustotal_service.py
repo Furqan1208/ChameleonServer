@@ -4,6 +4,9 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.virustotal")
 
 
 class VirusTotalService:
@@ -14,7 +17,7 @@ class VirusTotalService:
     def __init__(self):
         self.api_key = os.getenv("VIRUSTOTAL_API_KEY", "")
         if not self.api_key:
-            print("WARNING: VIRUSTOTAL_API_KEY not set")
+            _logger.warning("VIRUSTOTAL_API_KEY not set")
 
     @property
     def _headers(self) -> dict:
@@ -167,12 +170,12 @@ class VirusTotalService:
                 return None
             return response.json()
         except httpx.TimeoutException:
-            print(f"VT timeout: {endpoint}")
+            _logger.warning("VT timeout: %s", endpoint)
             return None
         except RuntimeError:
             raise
         except Exception as e:
-            print(f"VT request error {endpoint}: {e}")
+            _logger.exception("VT request error %s: %s", endpoint, e)
             return None
 
     async def _gather(self, *coroutines):

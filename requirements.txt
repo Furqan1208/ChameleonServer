@@ -1,16 +1,32 @@
+# Core Web Framework
 fastapi>=0.104.0
-uvicorn>=0.23.2
-motor>=3.3.1
-python-dotenv>=1.0.0
-pydantic>=2.4.2
-email-validator>=2.0.0
-ruff>=0.12.11
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
+uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
+
+# Database
+motor>=3.3.1
+pydantic>=2.5.0
+email-validator>=2.1.0
+
+# Security & Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+pyotp>=2.9.0
+qrcode[pil]>=7.4.2
+
+# External API Clients
 aiohttp>=3.9.0
-python-magic>=0.4.27
 google-genai>=1.0.0
 huggingface_hub>=0.22.0
-openai>=1.0.0 
+openai>=1.0.0
+python-magic>=0.4.27
+
+# Reporting & Visualization
 reportlab>=4.2.2
+
+# Development & Linting
+ruff>=0.12.11
+
+# Environment Management
+python-dotenv>=1.0.0

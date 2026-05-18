@@ -33,6 +33,12 @@ async def get_current_user(
     if user is None:
         raise unauthorized
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled",
+        )
+
     return user
 
 
@@ -52,4 +58,7 @@ async def get_current_user_optional(
     if not isinstance(user_id, str):
         return None
 
-    return await UserService(db).get_user_by_id(user_id)
+    user = await UserService(db).get_user_by_id(user_id)
+    if user and not user.is_active:
+        return None
+    return user

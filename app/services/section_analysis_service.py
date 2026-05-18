@@ -28,28 +28,22 @@ class SectionAnalyzer:
 
     def _setup_logging(self):
         """Setup comprehensive logging to file and console."""
-        # Create logs directory if it doesn't exist
         logs_dir = Path("logs")
         logs_dir.mkdir(exist_ok=True)
 
-        # Create a unique logger for this analysis
         logger_name = f"section_analyzer_{self.analysis_id}"
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
 
-        # Clear existing handlers
         logger.handlers.clear()
 
-        # File handler for detailed logs
         log_file = logs_dir / f"analysis_{self.analysis_id}.log"
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
 
-        # Console handler
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
 
-        # Formatter
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
@@ -69,12 +63,12 @@ class SectionAnalyzer:
         previous_analyses: Dict,
         model_name: Optional[str],
         analysis_id: str,
+        threat_intel_context: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Analyze a specific section using AI."""
         section_name = section_config.get("section")
         self.logger.info(f"Starting analysis for section: {section_name}")
 
-        # ✅ Check if this is strings analysis - skip it
         if section_name == "strings_analysis":
             self.logger.warning("Skipping strings analysis as requested")
             return {
@@ -91,12 +85,13 @@ class SectionAnalyzer:
                 parsed_results, section_config["input_sections"]
             )
 
-            # ✅ Get context for this section
             context = self._build_context(
-                previous_analyses, section_config, section_name
+                previous_analyses,
+                section_config,
+                section_name,
+                threat_intel_context,
             )
 
-            # ✅ SPECIAL LOGGING FOR FINAL SYNTHESIS
             if section_name == "final_synthesis":
                 self._log_final_synthesis_context(
                     previous_analyses, context, input_data
@@ -150,7 +145,6 @@ class SectionAnalyzer:
         self.logger.info("FINAL SYNTHESIS DEBUG LOGGING")
         self.logger.info("=" * 80)
 
-        # Log previous analyses structure
         self.logger.info(f"Previous analyses count: {len(previous_analyses)}")
         for section, analysis in previous_analyses.items():
             self.logger.info(f"  - {section}:")
@@ -161,7 +155,6 @@ class SectionAnalyzer:
                     f"    Timestamp: {analysis.get('timestamp', 'unknown')}"
                 )
 
-                # Check if analysis has actual analysis content
                 if "analysis" in analysis:
                     analysis_data = analysis["analysis"]
                     if isinstance(analysis_data, dict):
@@ -177,16 +170,13 @@ class SectionAnalyzer:
             else:
                 self.logger.warning(f"    Analysis is not a dict: {type(analysis)}")
 
-        # Log context size and preview
         self.logger.info(f"Context size: {len(context)} characters")
         if len(context) > 0:
             self.logger.info(f"Context preview (first 500 chars):")
             self.logger.info(context[:500] + "..." if len(context) > 500 else context)
 
-        # Log input data size
         self.logger.info(f"Input data size: {len(input_data)} characters")
 
-        # Save detailed context to file for inspection
         context_file = Path(f"logs/final_synthesis_context_{self.analysis_id}.json")
         try:
             context_data = {
@@ -221,7 +211,6 @@ class SectionAnalyzer:
         section_name = section_config["section"]
         self.logger.info(f"Starting chunked analysis for {section_name}")
 
-        # ✅ Skip if this is strings analysis
         if section_name == "strings_analysis":
             self.logger.warning("Skipping strings analysis (chunked mode)")
             return {
@@ -234,9 +223,10 @@ class SectionAnalyzer:
 
         section_data = parsed_results["sections"][section_config["input_sections"][0]]
 
-        # Clean behavior data before chunking if needed
         if section_name == "behavior_analysis":
             section_data = self._clean_behavior_for_ai(section_data)
+        elif section_name == "network_analysis":
+            section_data = self._clean_network_for_ai(section_data)
 
         chunked_data_list = self._get_chunks(section_name, section_data)
 
@@ -251,7 +241,6 @@ class SectionAnalyzer:
             f"Processing {len(chunked_data_list)} chunks for {section_name}"
         )
 
-        # ✅ Parallel chunk processing
         enable_parallel_chunks = section_config.get("parallel_chunks", True)
         max_parallel_chunks = section_config.get("max_parallel_chunks", 3)
 
@@ -323,7 +312,6 @@ class SectionAnalyzer:
                 if chunked_data.chunk_info.additional_metrics:
                     chunk_info_dict.update(chunked_data.chunk_info.additional_metrics)
 
-                # Use initial prompt for all chunks in parallel mode
                 full_prompt = self._build_prompt(
                     prompt_template,
                     context,
@@ -366,14 +354,12 @@ class SectionAnalyzer:
                         "timestamp": datetime.now().isoformat(),
                     }
 
-        # Process all chunks in parallel
         tasks = [
             process_single_chunk(idx, chunk)
             for idx, chunk in enumerate(chunked_data_list)
         ]
         chunk_results = await asyncio.gather(*tasks)
 
-        # Sort by chunk number to maintain order
         chunk_results = sorted(chunk_results, key=lambda x: x.get("chunk_number", 0))
 
         self.logger.info(
@@ -391,7 +377,7 @@ class SectionAnalyzer:
         model_name: Optional[str],
         analysis_id: str,
     ) -> List[Dict[str, Any]]:
-        """Process chunks sequentially (original method)."""
+        """Process chunks sequentially."""
         self.logger.info("Using sequential processing")
 
         chunk_results = []
@@ -490,7 +476,6 @@ class SectionAnalyzer:
         section_name = section_config.get("section")
         self.logger.info(f"Starting standard analysis for {section_name}")
 
-        # ✅ Skip if this is strings analysis
         if section_name == "strings_analysis":
             self.logger.warning("Skipping strings analysis (standard mode)")
             return {
@@ -501,29 +486,24 @@ class SectionAnalyzer:
                 "timestamp": datetime.now().isoformat(),
             }
 
-        # ✅ SPECIAL HANDLING FOR FINAL SYNTHESIS
         if section_name == "final_synthesis":
             self.logger.info("=== FINAL SYNTHESIS ANALYSIS START ===")
             self.logger.info(f"Context provided: {len(context)} characters")
             self.logger.info(f"Input data: {len(input_data)} characters")
 
-            # Save the complete prompt for debugging
             full_prompt = self._build_final_synthesis_prompt(
                 prompt_template, context, input_data
             )
 
-            # Save prompt to file for inspection
             prompt_file = Path(f"logs/final_synthesis_prompt_{self.analysis_id}.txt")
             prompt_file.write_text(full_prompt, encoding="utf-8")
             self.logger.info(f"Saved final synthesis prompt to: {prompt_file}")
 
-            # Log prompt summary
             self.logger.info(
                 f"Final synthesis prompt size: {len(full_prompt)} characters"
             )
 
         else:
-            # For other sections, use standard prompt building
             full_prompt = self._build_standard_prompt(
                 section_name, prompt_template, input_data, context
             )
@@ -536,8 +516,7 @@ class SectionAnalyzer:
                 full_prompt, model_name, analysis_id, section_name, section_name
             )
 
-            # ✅ Check if response is complete
-            if section_name in ["behavior_analysis", "final_synthesis"]:
+            if section_name in ["behavior_analysis", "network_analysis", "final_synthesis"]:
                 response = result.get("response", "")
                 is_complete = self._check_response_completeness(response)
 
@@ -552,13 +531,11 @@ class SectionAnalyzer:
                         )
                         result["response"] = fixed_response
 
-            # ✅ SPECIAL EXTRACTION FOR FINAL SYNTHESIS
             if section_name == "final_synthesis":
                 analysis = self._extract_final_synthesis(result.get("response", ""))
             else:
                 analysis = self.json_extractor.extract(result.get("response", ""))
 
-            # ✅ SPECIAL LOGGING FOR FINAL SYNTHESIS RESPONSE
             if section_name == "final_synthesis":
                 self.logger.info("=== FINAL SYNTHESIS ANALYSIS COMPLETE ===")
                 self.logger.info(f"AI Model used: {result.get('model')}")
@@ -572,7 +549,6 @@ class SectionAnalyzer:
                         f"Analysis structure keys: {list(analysis.keys())}"
                     )
 
-                    # Log key metrics
                     for key in [
                         "analysis_stage",
                         "cross_stage_correlation_analysis",
@@ -582,7 +558,6 @@ class SectionAnalyzer:
                         if key in analysis:
                             self.logger.info(f"  - {key}: Present")
 
-                    # Check if we got the full structure
                     if "cross_stage_correlation_analysis" in analysis:
                         correlation = analysis["cross_stage_correlation_analysis"]
                         if "evidence_convergence" in correlation:
@@ -591,7 +566,6 @@ class SectionAnalyzer:
                                 findings = convergence["strongly_correlated_findings"]
                                 self.logger.info(f"  - Findings count: {len(findings)}")
 
-                # Save the complete analysis
                 analysis_file = Path(
                     f"logs/final_synthesis_complete_{self.analysis_id}.json"
                 )
@@ -615,22 +589,127 @@ class SectionAnalyzer:
             )
             raise Exception(f"Standard analysis failed: {str(e)}") from e
 
+    def _clean_network_for_ai(self, network_data: Dict) -> Dict:
+        """
+        Clean network data for AI analysis.
+        Ensures network data is properly structured with ai_summary or full data.
+        """
+        if not network_data:
+            self.logger.warning("clean_network - Invalid input: empty")
+            return {"has_network_activity": False, "domains": [], "ips": []}
+
+        self.logger.info("Cleaning network data for AI...")
+
+        import copy
+
+        cleaned = copy.deepcopy(network_data)
+
+        # If network data has ai_summary, use it directly (already compact)
+        if isinstance(cleaned, dict) and "ai_summary" in cleaned:
+            self.logger.info("Network data already has ai_summary, using it directly")
+            return cleaned["ai_summary"]
+
+        # If network data has full structure, extract ai_summary
+        if isinstance(cleaned, dict) and "full" in cleaned:
+            if "ai_summary" in cleaned:
+                self.logger.info("Using ai_summary from full/ai_summary structure")
+                return cleaned["ai_summary"]
+            elif "full" in cleaned and isinstance(cleaned["full"], dict):
+                # Try to extract from full model
+                full_data = cleaned["full"]
+                ai_summary = {
+                    "has_network_activity": bool(
+                        full_data.get("domains") or full_data.get("hosts") or full_data.get("dns")
+                    ),
+                    "domains": [d.get("domain") for d in full_data.get("domains", [])[:30]],
+                    "ips": [h.get("ip") for h in full_data.get("hosts", [])[:30] if h.get("ip")],
+                    "dns_queries": [
+                        {"request": d.get("request"), "type": d.get("type")}
+                        for d in full_data.get("dns", [])[:20]
+                    ],
+                    "http_requests": [
+                        {"method": h.get("method"), "host": h.get("host"), "path": h.get("path", "")[:100]}
+                        for h in full_data.get("http", [])[:15]
+                    ],
+                    "total_tcp_connections": len(full_data.get("tcp", [])),
+                    "total_udp_connections": len(full_data.get("udp", [])),
+                    "total_dns_queries": len(full_data.get("dns", [])),
+                    "total_http_requests": len(full_data.get("http", [])),
+                    "has_suspicious_domains": any(
+                        any(k in d.get("domain", "").lower() for k in ["tk", "ml", "xyz", "ddns", "no-ip"])
+                        for d in full_data.get("domains", [])
+                    ),
+                    "has_dns_traffic": len(full_data.get("dns", [])) > 0,
+                    "has_https_traffic": any(h.get("port") == 443 or "https" in str(h.get("host", "")).lower() 
+                                            for h in full_data.get("http", [])),
+                }
+                ai_summary["quick_summary"] = self._generate_network_quick_summary(ai_summary)
+                self.logger.info("Generated ai_summary from full network data")
+                return ai_summary
+
+        # If network data is already the AI summary format
+        if isinstance(cleaned, dict) and "domains" in cleaned and "ips" in cleaned:
+            self.logger.info("Network data already in AI summary format")
+            return cleaned
+
+        original_size = len(json.dumps(network_data)) if network_data else 0
+        cleaned_size = len(json.dumps(cleaned)) if cleaned else 0
+        reduction = (
+            ((original_size - cleaned_size) / original_size) * 100
+            if original_size > 0
+            else 0
+        )
+
+        self.logger.info(
+            "Network data size reduction: %.1f%% (%d → %d chars)",
+            reduction,
+            original_size,
+            cleaned_size,
+        )
+
+        return cleaned
+
+    def _generate_network_quick_summary(self, ai_summary: Dict) -> str:
+        """Generate quick summary string for network data."""
+        parts = []
+        
+        domains = ai_summary.get("domains", [])
+        if domains:
+            parts.append(f"Domains: {len(domains)}")
+            if domains:
+                parts.append(f"Top domain: {domains[0][:50]}")
+        
+        ips = ai_summary.get("ips", [])
+        if ips:
+            parts.append(f"IPs: {len(ips)}")
+        
+        http = ai_summary.get("http_requests", [])
+        if http:
+            parts.append(f"HTTP: {len(http)}")
+        
+        dns = ai_summary.get("dns_queries", [])
+        if dns:
+            parts.append(f"DNS: {len(dns)}")
+        
+        dead_hosts = ai_summary.get("dead_hosts", [])
+        if dead_hosts:
+            parts.append(f"Dead hosts: {len(dead_hosts)}")
+        
+        if ai_summary.get("has_suspicious_domains"):
+            parts.append("Suspicious domains detected")
+        
+        return " | ".join(parts) if parts else "No network activity"
+
     def _extract_final_synthesis(self, response: str) -> Dict[str, Any]:
-        """
-        Special extraction for final synthesis responses.
-        Handles the full JSON structure instead of just extracting a subset.
-        """
+        """Special extraction for final synthesis responses."""
         try:
-            # First try to extract JSON using the standard extractor
             extracted = self.json_extractor.extract(response)
 
-            # If we get a dict with the expected structure, return it
             if isinstance(extracted, dict):
                 self.logger.info(
                     f"Extracted final synthesis structure: {list(extracted.keys())}"
                 )
 
-                # Check if this looks like a minimal extraction or full structure
                 minimal_keys = {
                     "finding_description",
                     "supporting_stages",
@@ -646,16 +725,13 @@ class SectionAnalyzer:
                 if minimal_keys.issubset(
                     set(extracted.keys())
                 ) and not full_keys.issubset(set(extracted.keys())):
-                    # This is the minimal extraction, we need to get the full response
                     self.logger.warning(
                         "Only minimal extraction found, attempting to extract full JSON"
                     )
                     return self._extract_full_final_synthesis(response)
                 else:
-                    # This looks like the full structure
                     return extracted
 
-            # If extraction returned something else, try to get the full JSON
             return self._extract_full_final_synthesis(response)
 
         except Exception as e:
@@ -663,31 +739,23 @@ class SectionAnalyzer:
             return self._extract_full_final_synthesis(response)
 
     def _extract_full_final_synthesis(self, response: str) -> Dict[str, Any]:
-        """
-        Extract the complete final synthesis JSON from the response.
-        """
+        """Extract the complete final synthesis JSON from the response."""
         try:
-            # Clean the response
             cleaned = response.strip()
 
-            # Remove markdown code blocks
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
 
-            # Try to find JSON with regex
             json_pattern = r"\{.*\}"
             matches = re.findall(json_pattern, cleaned, re.DOTALL)
 
             if matches:
-                # Try each match
                 for match in matches:
                     try:
                         parsed = json.loads(match)
                         self.logger.info(f"Successfully parsed JSON from response")
 
-                        # Ensure it has the expected structure
                         if isinstance(parsed, dict):
-                            # Check if it's the minimal or full structure
                             minimal_keys = {
                                 "finding_description",
                                 "supporting_stages",
@@ -695,13 +763,11 @@ class SectionAnalyzer:
                                 "convergence_strength",
                             }
                             if minimal_keys.issubset(set(parsed.keys())):
-                                # This is a minimal finding, not the full synthesis
                                 self.logger.warning(
                                     "Parsed JSON appears to be a minimal finding, not full synthesis"
                                 )
                                 continue
 
-                            # Check for full synthesis structure
                             if (
                                 "analysis_stage" in parsed
                                 or "cross_stage_correlation_analysis" in parsed
@@ -712,7 +778,6 @@ class SectionAnalyzer:
                     except json.JSONDecodeError:
                         continue
 
-            # If we get here, try to parse the entire response as JSON
             try:
                 parsed = json.loads(cleaned)
                 self.logger.info("Parsed entire response as JSON")
@@ -720,7 +785,6 @@ class SectionAnalyzer:
             except json.JSONDecodeError:
                 pass
 
-            # Last resort: create a structured response from what we have
             self.logger.warning(
                 "Could not parse full JSON, creating structured response"
             )
@@ -791,6 +855,10 @@ class SectionAnalyzer:
         elif section_name == "network_analysis":
             try:
                 network_data = json.loads(input_data) if input_data else {}
+                self.logger.debug(
+                    f"Network analysis - Raw network_data type: {type(network_data)}"
+                )
+
                 full_prompt = prompt_template
 
                 if "{network_data}" in prompt_template:
@@ -829,10 +897,8 @@ class SectionAnalyzer:
         """Build special prompt for final synthesis with enhanced context."""
         self.logger.info("Building enhanced final synthesis prompt")
 
-        # Create a more structured context for final synthesis
         enhanced_context = self._enhance_final_synthesis_context(context, input_data)
 
-        # Replace placeholders in template
         full_prompt = prompt_template
 
         if "{previous_analysis}" in prompt_template:
@@ -846,7 +912,6 @@ class SectionAnalyzer:
             )
             full_prompt = full_prompt.replace("{context}", enhanced_context)
         else:
-            # Append context if no placeholder
             self.logger.info(
                 f"Appending context to prompt ({len(enhanced_context)} chars)"
             )
@@ -857,14 +922,12 @@ class SectionAnalyzer:
     def _enhance_final_synthesis_context(self, context: str, input_data: str) -> str:
         """Enhance context for final synthesis with better structure."""
         try:
-            # Try to parse the context if it's JSON
             if context.strip().startswith("{"):
                 context_data = json.loads(context)
                 self.logger.info(
                     f"Parsed context as JSON with keys: {list(context_data.keys())}"
                 )
 
-                # Enhance the context with instructions
                 enhanced = {
                     "INSTRUCTIONS": {
                         "purpose": "FINAL MALWARE ANALYSIS SYNTHESIS",
@@ -890,9 +953,15 @@ class SectionAnalyzer:
                     },
                 }
 
+                if "THREAT_INTELLIGENCE" in context_data:
+                    enhanced["THREAT_INTELLIGENCE"] = context_data["THREAT_INTELLIGENCE"]
+                    enhanced["TI_GUIDANCE"] = context_data.get("TI_GUIDANCE", {})
+                    self.logger.info(
+                        "✅ Threat Intelligence included in final synthesis context"
+                    )
+
                 return json.dumps(enhanced, indent=2, default=str)
             else:
-                # If context is not JSON, return as-is with enhancement
                 enhanced = f"""FINAL SYNTHESIS CONTEXT - INTEGRATE ALL FINDINGS:
 
 {context}
@@ -914,7 +983,6 @@ Return the FULL JSON structure, not just individual findings.
                 return enhanced
 
         except json.JSONDecodeError:
-            # Context is not JSON, enhance it
             enhanced = f"""FINAL SYNTHESIS CONTEXT:
 
 {context}
@@ -928,33 +996,26 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
             return enhanced
 
     def _check_response_completeness(self, response: str) -> bool:
-        """
-        Check if a JSON response is complete.
-        Returns True if response appears to be complete JSON.
-        """
+        """Check if a JSON response is complete."""
         if not response:
             return False
 
         response = response.strip()
 
-        # Check if starts and ends with braces
         if not response.startswith("{"):
             return False
 
-        # Count braces to check balance
         open_braces = response.count("{")
         close_braces = response.count("}")
 
         if open_braces != close_braces:
             return False
 
-        # Check for incomplete arrays
         open_brackets = response.count("[")
         close_brackets = response.count("]")
         if open_brackets != close_brackets:
             return False
 
-        # Try to parse as JSON
         try:
             json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
@@ -967,30 +1028,24 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
         return True
 
     def _fix_incomplete_json(self, response: str) -> str:
-        """
-        Attempt to fix incomplete JSON by adding missing closing braces.
-        """
+        """Attempt to fix incomplete JSON by adding missing closing braces."""
         if not response:
             return response
 
         response = response.strip()
 
-        # Remove markdown code blocks if present
         response = re.sub(r"^```(?:json)?\s*", "", response)
         response = re.sub(r"\s*```$", "", response)
 
-        # Count braces and add missing ones
         open_braces = response.count("{")
         close_braces = response.count("}")
 
         fixed_response = response
 
-        # Add missing closing braces
         if open_braces > close_braces:
             missing = open_braces - close_braces
             fixed_response += "}" * missing
 
-        # Count brackets and add missing ones
         open_brackets = fixed_response.count("[")
         close_brackets = fixed_response.count("]")
 
@@ -998,7 +1053,6 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
             missing = open_brackets - close_brackets
             fixed_response += "]" * missing
 
-        # Check for trailing comma before closing brace
         lines = fixed_response.split("\n")
         if len(lines) > 1:
             last_line = lines[-2].strip()
@@ -1017,21 +1071,17 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
         task_id: str = None,
     ) -> Dict[str, Any]:
         """Call AI model with fallback logic."""
-        # Get model priority with section-specific logic
         models = self._get_model_priority(preferred_model, section_name)
 
         self.logger.info(f"Model priority for {section_name}: {models}")
 
-        # Estimate tokens for debugging
         token_estimate = self._estimate_tokens(prompt)
         self.logger.info(f"Prompt size: {len(prompt)} chars (~{token_estimate} tokens)")
 
-        # ✅ SPECIAL HANDLING FOR FINAL SYNTHESIS - Use larger context model
         if section_name == "final_synthesis":
             self.logger.info(
                 "Final synthesis detected - ensuring adequate context window"
             )
-            # Prefer models with larger context windows
             if "gemini-2.5-pro" not in models:
                 models.insert(0, "gemini-2.5-pro")
             if "gemini-2.5-flash" not in models:
@@ -1042,7 +1092,6 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
             try:
                 self.logger.info(f"Trying model: {model_name}")
 
-                # Validate prompt size for this model
                 if not self._validate_prompt_size(prompt, section_name, model_name):
                     self.logger.warning(
                         f"Prompt too large for {model_name}, skipping..."
@@ -1083,11 +1132,10 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
     def _get_model_priority(
         self, preferred_model: Optional[str], section_name: str = None
     ) -> List[str]:
-        """Get model priority list, with special handling for behavior analysis."""
+        """Get model priority list, with special handling for behavior and network analysis."""
 
-        # SPECIAL CASE: Force Gemini Pro for behavior analysis
-        if section_name == "behavior_analysis":
-            self.logger.info("Using HIGHER-CONTEXT Gemini model for behavior analysis")
+        if section_name in ["behavior_analysis", "network_analysis"]:
+            self.logger.info(f"Using HIGHER-CONTEXT Gemini model for {section_name}")
             return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
 
         models = []
@@ -1160,127 +1208,312 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
     def _prepare_input_data(
         self, parsed_results: Dict, section_names: List[str]
     ) -> str:
-        """Prepare input data for analysis."""
+        """
+        Prepare input data for AI analysis.
+        Sends FULL parsed data for info, statistics, cape, target, memory, signatures, network since parsers already removed bloat.
+        For other sections, uses ai_summary or summary if available.
+        """
+        if section_names == ["all_ai_analyses"]:
+            return self._prepare_all_ai_analyses(parsed_results)
         if section_names == ["all"]:
-            data_to_prepare = parsed_results["sections"].copy()
-            if "behavior" in data_to_prepare:
-                data_to_prepare["behavior"] = self._clean_behavior_for_ai(
-                    data_to_prepare["behavior"]
-                )
-            return json.dumps(data_to_prepare, indent=2)
-        elif section_names == ["all_ai_analyses"]:
-            return ""
-        else:
-            if len(section_names) == 1 and section_names[0] == "behavior":
-                if "behavior" in parsed_results["sections"]:
-                    behavior_data = parsed_results["sections"]["behavior"]
-                    cleaned_behavior = self._clean_behavior_for_ai(behavior_data)
+            return self._prepare_all_sections_compact(parsed_results)
+        if len(section_names) == 1:
+            return self._prepare_single_section(parsed_results, section_names[0])
+        return self._prepare_multiple_sections(parsed_results, section_names)
 
-                    self.logger.debug(
-                        f"Preparing input data for behavior - cleaned_behavior type: {type(cleaned_behavior)}"
-                    )
+    def _prepare_all_ai_analyses(self, parsed_results: Dict) -> str:
+        """
+        Prepare data for final synthesis - sends FULL data for main sections,
+        uses ai_summary/summary for others.
+        """
+        combined: Dict[str, Any] = {}
 
-                    if "data" not in cleaned_behavior:
-                        self.logger.warning("'data' key missing in cleaned_behavior!")
-                        cleaned_behavior = {"data": cleaned_behavior}
+        ai_sections = [
+            "info",
+            "statistics",
+            "cape",
+            "target",
+            "memory",
+            "signatures",
+            "network",
+            "behavior",
+        ]
 
-                    return json.dumps(cleaned_behavior, indent=2)
+        # Sections that should send FULL data (already compacted by parsers)
+        full_data_sections = {"info", "statistics", "cape", "target", "memory", "signatures", "network"}
+
+        sections = parsed_results.get("sections", {})
+        for section_name in ai_sections:
+            if section_name in sections:
+                section_data = sections[section_name]
+                
+                # Send full data for compacted sections
+                if section_name in full_data_sections:
+                    combined[section_name] = section_data
+                # For other sections, prefer ai_summary or summary
+                elif isinstance(section_data, dict) and "ai_summary" in section_data:
+                    combined[section_name] = section_data["ai_summary"]
+                elif isinstance(section_data, dict) and "summary" in section_data:
+                    combined[section_name] = section_data["summary"]
                 else:
-                    return json.dumps({}, indent=2)
-            else:
-                data = {}
-                for name in section_names:
-                    if name in parsed_results["sections"]:
-                        section_data = parsed_results["sections"][name]
-                        if name == "behavior":
-                            section_data = self._clean_behavior_for_ai(section_data)
-                        data[name] = section_data
+                    self.logger.warning(
+                        "Section %s has no ai_summary or summary, using full data",
+                        section_name,
+                    )
+                    combined[section_name] = section_data
 
-                return json.dumps(data, indent=2)
+        self.logger.info("Prepared %d sections for final synthesis", len(combined))
+        self.logger.debug("Combined data size: %d chars", len(json.dumps(combined)))
+
+        return json.dumps(combined, indent=2, default=str)
+
+    def _prepare_all_sections_compact(self, parsed_results: Dict) -> str:
+        """
+        Prepare compact version of all sections for initial combined analysis.
+        Sends FULL data for info, statistics, cape, target, memory, signatures, network.
+        """
+        compact_data: Dict[str, Any] = {}
+        sections = parsed_results.get("sections", {})
+
+        # Sections that should send FULL data (already compacted by parsers)
+        full_data_sections = {"info", "statistics", "cape", "target", "memory", "signatures", "network"}
+
+        for section_name, section_data in sections.items():
+            if section_name in full_data_sections:
+                compact_data[section_name] = section_data
+            else:
+                data_size = len(json.dumps(section_data)) if section_data else 0
+                if data_size > 10000:
+                    self.logger.warning(
+                        "Section %s is large (%d chars), consider compacting",
+                        section_name,
+                        data_size,
+                    )
+                compact_data[section_name] = section_data
+
+        result_json = json.dumps(compact_data, indent=2, default=str)
+        self.logger.info(
+            "Prepared compact data for all sections: %d chars", len(result_json)
+        )
+
+        return result_json
+
+    def _prepare_single_section(self, parsed_results: Dict, section_name: str) -> str:
+        """
+        Prepare a single section for analysis.
+        Sends FULL data for info, statistics, cape, target, memory, signatures, network.
+        For others, uses ai_summary if available, otherwise full section.
+        """
+        sections = parsed_results.get("sections", {})
+
+        if section_name not in sections:
+            self.logger.warning("Section %s not found in parsed results", section_name)
+            return json.dumps({})
+
+        section_data = sections[section_name]
+
+        # Sections that should send FULL data (already compacted by parsers)
+        full_data_sections = {"info", "statistics", "cape", "target", "memory", "signatures", "network"}
+
+        if section_name in full_data_sections:
+            data_to_send = section_data
+            result_json = json.dumps(data_to_send, indent=2, default=str)
+            self.logger.info("Prepared %s: %d chars", section_name, len(result_json))
+            return result_json
+
+        if isinstance(section_data, dict):
+            if "ai_summary" in section_data:
+                data_to_send = section_data["ai_summary"]
+                self.logger.debug("Using ai_summary for %s", section_name)
+            elif "summary" in section_data:
+                data_to_send = section_data["summary"]
+                self.logger.debug("Using summary for %s", section_name)
+            else:
+                data_to_send = section_data
+                self.logger.debug("Using full data for %s", section_name)
+        else:
+            data_to_send = section_data
+
+        result_json = json.dumps(data_to_send, indent=2, default=str)
+        self.logger.info("Prepared %s: %d chars", section_name, len(result_json))
+
+        return result_json
+
+    def _prepare_multiple_sections(
+        self, parsed_results: Dict, section_names: List[str]
+    ) -> str:
+        """
+        Prepare multiple specific sections.
+        Sends FULL data for info, statistics, cape, target, memory, signatures, network.
+        For others, uses compact versions where available.
+        """
+        combined: Dict[str, Any] = {}
+        sections = parsed_results.get("sections", {})
+
+        # Sections that should send FULL data (already compacted by parsers)
+        full_data_sections = {"info", "statistics", "cape", "target", "memory", "signatures", "network"}
+
+        for section_name in section_names:
+            if section_name not in sections:
+                self.logger.warning("Section %s not found", section_name)
+                continue
+
+            section_data = sections[section_name]
+
+            if section_name in full_data_sections:
+                combined[section_name] = section_data
+            elif isinstance(section_data, dict):
+                if "ai_summary" in section_data:
+                    combined[section_name] = section_data["ai_summary"]
+                elif "summary" in section_data:
+                    combined[section_name] = section_data["summary"]
+                else:
+                    combined[section_name] = section_data
+            else:
+                combined[section_name] = section_data
+
+        result_json = json.dumps(combined, indent=2, default=str)
+        self.logger.info(
+            "Prepared %d sections: %d chars", len(combined), len(result_json)
+        )
+
+        return result_json
+
+    def _compact_summary_only(self, section_data: Dict) -> Dict:
+        """Keep only the summary object for already-compacted metadata sections."""
+        if not isinstance(section_data, dict):
+            return section_data
+
+        summary = section_data.get("summary")
+        if summary is None:
+            return section_data
+
+        return {"summary": summary}
+
+    def _compact_cape_section(self, section_data: Dict) -> Dict:
+        """Keep the compact CAPE payload/config preview and its summary only."""
+        if not isinstance(section_data, dict):
+            return section_data
+
+        compact = {
+            "payloads": section_data.get("payloads", []),
+            "configs": section_data.get("configs", []),
+            "summary": section_data.get("summary", {}),
+        }
+        return compact
+
+    def _compact_target_section(self, section_data: Dict) -> Dict:
+        """Keep compact target summary and detection highlights only."""
+        if not isinstance(section_data, dict):
+            return section_data
+
+        compact = {
+            "summary": section_data.get("summary", {}),
+            "detections": section_data.get("detections", []),
+            "detections2pid": section_data.get("detections2pid", []),
+        }
+        return compact
+
+    def _compact_initial_context_sections(self, sections: Dict[str, Any]) -> Dict[str, Any]:
+        """Reduce initial context sections to the smallest prompt-safe form."""
+        compacted = {}
+        for name, section_data in sections.items():
+            if name in {"info", "statistics"}:
+                compacted[name] = self._compact_summary_only(section_data)
+            elif name == "cape":
+                compacted[name] = self._compact_cape_section(section_data)
+            elif name == "target":
+                compacted[name] = self._compact_target_section(section_data)
+            else:
+                compacted[name] = section_data
+        return compacted
 
     def _clean_behavior_for_ai(self, behavior_data: Dict) -> Dict:
         """
-        Create a cleaned version of behavior data for AI analysis.
-        Removes verbose sections (calls and enhanced) to reduce token count.
+        Clean behavior data for AI analysis.
+        Handles new parser format with full/ai_summary.
         """
-        if not behavior_data or "data" not in behavior_data:
-            self.logger.warning(
-                f"clean_behavior - Invalid input: {type(behavior_data)}"
-            )
-            return behavior_data
+        if not behavior_data:
+            self.logger.warning("clean_behavior - Invalid input: empty")
+            return {"total_processes": 0, "quick_summary": "No behavior data"}
 
-        self.logger.info("Cleaning behavior data...")
+        self.logger.info("Cleaning behavior data for AI...")
 
         import copy
 
         cleaned = copy.deepcopy(behavior_data)
 
-        # Calculate original size
-        original_json = json.dumps(behavior_data)
-        original_size = len(original_json)
+        # New parser format: { "full": {...}, "ai_summary": {...} }
+        if isinstance(cleaned, dict):
+            # If already has ai_summary, use it directly
+            if "ai_summary" in cleaned:
+                self.logger.info("Behavior data already has ai_summary, using it directly")
+                return cleaned["ai_summary"]
+            
+            # If has full structure but no ai_summary (shouldn't happen), extract from full
+            if "full" in cleaned and isinstance(cleaned["full"], dict):
+                full_data = cleaned["full"]
+                # Build minimal ai_summary from full data
+                ai_summary = {
+                    "total_processes": len(full_data.get("processes", [])),
+                    "total_api_calls": sum(len(p.get("calls", [])) for p in full_data.get("processes", [])),
+                    "quick_summary": f"Found {len(full_data.get('processes', []))} processes"
+                }
+                self.logger.info("Generated ai_summary from full behavior data")
+                return ai_summary
+            
+            # If already in AI summary format
+            if "total_processes" in cleaned:
+                self.logger.info("Behavior data already in AI summary format")
+                return cleaned
 
-        # Clean processes (remove calls section)
-        if "processes" in cleaned["data"]:
-            process_count = len(cleaned["data"]["processes"])
-            self.logger.info(f"Found {process_count} processes")
-            total_calls_removed = 0
-
-            for process in cleaned["data"]["processes"]:
-                if "calls" in process:
-                    call_count = len(process["calls"])
-                    if call_count > 40:
-                        important_calls = process["calls"][:20] + process["calls"][-20:]
-                        process["calls"] = important_calls
-                        removed = call_count - 40
-                        total_calls_removed += removed
-                        process["calls_summary"] = {
-                            "total_original_calls": call_count,
-                            "calls_preserved": 40,
-                            "note": f"{removed} routine calls removed for brevity",
-                        }
-                    else:
-                        process["calls_summary"] = {
-                            "total_calls": call_count,
-                            "note": f"All {call_count} calls preserved",
-                        }
-
-            self.logger.info(
-                f"Processed calls, total calls removed: {total_calls_removed}"
+        # Fallback for old format (with data.processes)
+        if "data" in cleaned and isinstance(cleaned["data"], dict):
+            data = cleaned["data"]
+            
+            if "processes" in data:
+                processes = data["processes"]
+                for process in processes:
+                    if "calls" in process:
+                        call_count = len(process["calls"])
+                        if call_count > 40:
+                            process["calls"] = process["calls"][:20] + process["calls"][-20:]
+                            process["calls_summary"] = {
+                                "total_original_calls": call_count,
+                                "calls_preserved": 40
+                            }
+            
+            if "enhanced" in data and len(data["enhanced"]) > 100:
+                data["enhanced"] = data["enhanced"][:100]
+                data["enhanced_summary"] = {"events_preserved": 100}
+            
+            original_json = json.dumps(behavior_data)
+            original_size = len(original_json)
+            cleaned_json = json.dumps(cleaned)
+            cleaned_size = len(cleaned_json)
+            reduction = (
+                ((original_size - cleaned_size) / original_size) * 100
+                if original_size > 0
+                else 0
             )
 
-        # Summarize enhanced section instead of removing
-        if "enhanced" in cleaned["data"]:
-            enhanced_count = len(cleaned["data"]["enhanced"])
-            if enhanced_count > 100:
-                cleaned["data"]["enhanced"] = cleaned["data"]["enhanced"][:100]
-                cleaned["data"]["enhanced_summary"] = {
-                    "total_original_events": enhanced_count,
-                    "events_preserved": 100,
-                    "note": f"Top 100 most relevant enhanced events shown",
-                }
-                self.logger.info(
-                    f"Enhanced events reduced from {enhanced_count} to 100"
-                )
-
-        # Calculate cleaned size
-        cleaned_json = json.dumps(cleaned)
-        cleaned_size = len(cleaned_json)
-        reduction = ((original_size - cleaned_size) / original_size) * 100
-
-        self.logger.info(
-            f"Size reduction: {reduction:.1f}% ({original_size:,} → {cleaned_size:,} chars)"
-        )
+            self.logger.info(
+                "Behavior data size reduction: %.1f%% (%d → %d chars)",
+                reduction,
+                original_size,
+                cleaned_size,
+            )
 
         return cleaned
 
     def _build_context(
-        self, previous_analyses: Dict, section_config: Dict, section_name: str
+        self,
+        previous_analyses: Dict,
+        section_config: Dict,
+        section_name: str,
+        threat_intel_context: Optional[Dict] = None,
     ) -> str:
-        """
-        Build context from previous analyses.
-
-        ✅ MODIFIED: For final_synthesis, send COMPLETE previous analyses without filtering.
-        """
+        """Build context from previous analyses."""
         if not section_config.get("requires_previous") or not previous_analyses:
             return ""
 
@@ -1289,20 +1522,53 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
                 "Building context for final_synthesis - sending COMPLETE previous analyses"
             )
 
-            # ✅ Send everything - no filtering
             complete_context = {
                 "COMPLETE_PREVIOUS_ANALYSES": previous_analyses,
                 "ANALYSIS_SUMMARY": self._create_analysis_summary(previous_analyses),
-                "NOTE": "This contains all previous analysis results without filtering. "
-                "You MUST return a COMPLETE JSON structure, not just individual findings.",
+                "IMPORTANT_NOTE": (
+                    "The threat intelligence results below are AUTHORITATIVE. "
+                    "If multiple threat intel sources show the file as CLEAN, "
+                    "you MUST weigh this heavily in your final assessment. "
+                    "Sandbox behavioral scores can have false positives - "
+                    "cross-reference with threat intel before making conclusions."
+                ),
             }
+
+            if threat_intel_context:
+                complete_context["THREAT_INTELLIGENCE"] = threat_intel_context
+                complete_context["TI_GUIDANCE"] = {
+                    "how_to_use_ti": (
+                        "1. If VirusTotal shows 0/X detections and file is signed, "
+                        "this strongly suggests LEGITIMATE software\n"
+                        "2. If MalwareBazaar, Hybrid Analysis, and OTX all show 'Not Found', "
+                        "the file is likely not malware\n"
+                        "3. A high sandbox score + clean threat intel = possible false positive\n"
+                        "4. Adjust your threat_score accordingly - do NOT give 8.5/10 "
+                        "to a signed Google installer with 0/72 VT detections\n"
+                        "5. Legitimate software installers (Chrome, Firefox, etc.) will "
+                        "exhibit 'suspicious' behaviors (registry changes, network connections) - "
+                        "this is NORMAL and not malicious"
+                    ),
+                    "scoring_rules": {
+                        "vt_clean_and_signed": "threat_score MUST be ≤ 2.0/10",
+                        "all_ti_clean": "threat_score MUST be ≤ 3.0/10",
+                        "mixed_results": "weigh threat intel MORE than sandbox behavior",
+                        "ti_confirms_malicious": "can trust sandbox score with higher confidence",
+                    },
+                }
+                self.logger.info(
+                    "✅ Threat intelligence context included in final synthesis"
+                )
+            else:
+                self.logger.warning(
+                    "⚠️ No threat intelligence context available for final synthesis"
+                )
 
             context_str = json.dumps(complete_context, indent=2, default=str)
             self.logger.debug(f"Final synthesis context size: {len(context_str)} chars")
 
             return context_str
 
-        # For other sections, use filtered approach
         context_data = {
             name: analysis.get("analysis")
             for name, analysis in previous_analyses.items()
@@ -1368,7 +1634,6 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
         section_name: str,
     ) -> str:
         """Build complete prompt for AI analysis."""
-        # For behavior analysis in chunks
         if section_name == "behavior_analysis":
             if "{behavior_data}" in template:
                 template = template.replace(
@@ -1381,8 +1646,19 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
                 return f"{template}\n\n{context}"
             else:
                 return template
+        elif section_name == "network_analysis":
+            if "{network_data}" in template:
+                template = template.replace(
+                    "{network_data}", json.dumps(chunk_data, indent=2)
+                )
+            if "{previous_analysis}" in template:
+                template = template.replace("{previous_analysis}", context)
 
-        # For other sections
+            if context and "{previous_analysis}" not in template:
+                return f"{template}\n\n{context}"
+            else:
+                return template
+
         prompt = template.replace("{chunk_info}", json.dumps(chunk_info, indent=2))
         prompt = prompt.replace("{section_data}", json.dumps(chunk_data, indent=2))
 
@@ -1392,6 +1668,8 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
         """Get chunks for a section."""
         if section_name == "behavior_analysis":
             return self.chunking_service.chunk_behavior_data(section_data)
+        elif section_name == "network_analysis":
+            return self.chunking_service.chunk_network_data(section_data)
         elif section_name == "strings_analysis":
             self.logger.warning("Skipping strings analysis chunking")
             from dataclasses import dataclass
@@ -1436,7 +1714,46 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
 
     def _has_section_data(self, parsed_results: Dict, section_config: Dict) -> bool:
         """Check if section has data available."""
-        return section_config["input_sections"][0] in parsed_results["sections"]
+        input_sections = section_config.get("input_sections", [])
+        if not input_sections:
+            return False
+
+        section_name = input_sections[0]
+        sections = parsed_results.get("sections", {})
+
+        if section_name not in sections:
+            return False
+
+        section_data = sections[section_name]
+
+        if isinstance(section_data, dict):
+            if "ai_summary" in section_data:
+                ai_summary = section_data["ai_summary"]
+                if isinstance(ai_summary, dict):
+                    if ai_summary.get("detected_families") or ai_summary.get(
+                        "total_payloads", 0
+                    ) > 0:
+                        return True
+                    if ai_summary.get("domains") and len(ai_summary.get("domains", [])) > 0:
+                        return True
+                    if (
+                        ai_summary.get("quick_summary")
+                        and ai_summary["quick_summary"]
+                        != "No CAPE data extracted"
+                    ):
+                        return True
+                return bool(ai_summary)
+
+            if "summary" in section_data:
+                return bool(section_data["summary"])
+
+            if section_name == "statistics" and section_data.get("processing_summary"):
+                return True
+
+            if section_data and len(section_data) > 0:
+                return True
+
+        return bool(section_data)
 
     def _combine_chunks(self, chunk_results: List[Dict]) -> Dict[str, Any]:
         """Combine analysis results from multiple chunks into a summary."""

@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.utils.filtration_and_extraction")
 
 
 def clean_empty_values(data: Any) -> Any:
@@ -40,7 +43,7 @@ def get_report_section(report_path: Path, section_name: str) -> Any:
         else:
             return None
     except Exception as error:
-        print(f"Error reading {section_name}: {error}")
+        _logger.exception("Error reading %s: %s", section_name, error)
         return None
 
 
@@ -80,6 +83,6 @@ def write_cleaned_data(
     try:
         with open(output_path, "w", encoding="utf-8") as file:
             json.dump(cleaned_data, file, indent=2, ensure_ascii=False)
-        print(f"Saved {data_type} to: {output_path}")
+        _logger.info("Saved %s to: %s", data_type, output_path)
     except Exception as error:
-        print(f"Error saving {data_type}: {error}")
+        _logger.exception("Error saving %s: %s", data_type, error)

@@ -126,7 +126,9 @@ async def get_cape_report(
 ):
     """
     Get CAPE raw report, scoped to current user.
+    Reads from file system (MongoDB stores only metadata).
     """
+    # Verify ownership first
     cape_result = await db_service.get_cape_results(
         user_id=user_id, analysis_id=analysis_id
     )
@@ -134,10 +136,25 @@ async def get_cape_report(
     if not cape_result:
         raise HTTPException(404, f"CAPE report not found for {analysis_id}")
 
+    # Read full report from file system
+    from app.services.report_structure_service import report_structure_service
+    from pathlib import Path
+    
+    analysis_dir = report_structure_service.base_dir / analysis_id
+    cape_file = analysis_dir / "cape" / "raw_report.json"
+    
+    if not cape_file.exists():
+        raise HTTPException(500, f"CAPE report file not found at {cape_file}")
+    
+    try:
+        cape_data = report_structure_service.load_json(cape_file)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load CAPE report: {str(e)}")
+
     return {
         "analysis_id": analysis_id,
         "type": "cape_raw",
-        "data": cape_result.get("data", {}),
+        "data": cape_data,
         "created_at": cape_result.get("created_at"),
     }
 

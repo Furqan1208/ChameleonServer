@@ -6,6 +6,9 @@ import aiohttp
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.services.database_service import DatabaseService
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.cape")
 
 
 class CapeAnalysisService:
@@ -44,7 +47,7 @@ class CapeAnalysisService:
             form_data.add_field("options", cape_options)
 
             async with session.post(url, headers=headers, data=form_data) as resp:
-                print("Status:", resp.status)
+                _logger.info("CAPE submit status: %s", resp.status)
 
                 if resp.status != 200:
                     return None
@@ -59,28 +62,28 @@ class CapeAnalysisService:
         headers = {"Authorization": f"Token {self.cape_api_token}"}
 
         for attempt in range(self.max_poll_attempts):
-            print(f"Polling CAPE report for task {task_id}... attempt {attempt + 1}")
+            _logger.info("Polling CAPE report for task %s... attempt %d", task_id, attempt + 1)
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as resp:
                     text = await resp.text()
 
                     if resp.status != 200:
-                        print("Non-200 from CAPE:", resp.status, text)
+                        _logger.warning("Non-200 from CAPE: %s %s", resp.status, text)
                         await asyncio.sleep(self.poll_interval)
                         continue
 
                     try:
                         data = await resp.json()
                     except Exception:
-                        print("CAPE returned non-JSON:", text)
+                        _logger.exception("CAPE returned non-JSON: %s", text)
                         await asyncio.sleep(self.poll_interval)
                         continue
 
                     # CAPE still processing
                     if data.get("error") is True:
                         error_value = data.get("error_value", "")
-                        print("CAPE not ready:", error_value)
+                        _logger.info("CAPE not ready: %s", error_value)
 
                         if "Reports directory does not exist" in error_value:
                             # task running, report not created yet
@@ -88,7 +91,7 @@ class CapeAnalysisService:
                             continue
 
                         # other errors (rare)
-                        print("CAPE error:", error_value)
+                        _logger.error("CAPE error: %s", error_value)
                         await asyncio.sleep(self.poll_interval)
                         continue
 
@@ -97,7 +100,7 @@ class CapeAnalysisService:
 
             await asyncio.sleep(self.poll_interval)
 
-        print("Max poll attempts reached.")
+        _logger.warning("Max poll attempts reached for task %s", task_id)
         return None
 
     async def get_cape_results(self, user_id: str, analysis_id: str) -> Optional[Dict]:

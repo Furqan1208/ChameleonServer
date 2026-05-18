@@ -2,6 +2,9 @@ import os
 from datetime import datetime
 
 import httpx
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.abuseipdb")
 
 
 class AbuseIPDBService:
@@ -12,7 +15,7 @@ class AbuseIPDBService:
     def __init__(self):
         self.api_key = os.getenv("ABUSEIPDB_API_KEY", "")
         if not self.api_key:
-            print("WARNING: ABUSEIPDB_API_KEY not set")
+            _logger.warning("ABUSEIPDB_API_KEY not set")
 
     @property
     def _headers(self) -> dict:
@@ -51,7 +54,7 @@ class AbuseIPDBService:
             except httpx.TimeoutException:
                 raise RuntimeError("AbuseIPDB request timed out.")  # noqa: B904
             except Exception as e:
-                print(f"[AbuseIPDB] Error checking {ip}: {e}")
+                _logger.exception("[AbuseIPDB] Error checking %s: %s", ip, e)
                 return self._not_found(ip, str(e))
 
     async def check_block(self, network: str, limit: int = 10) -> dict:
@@ -75,7 +78,7 @@ class AbuseIPDBService:
                     "timestamp": datetime.utcnow().isoformat(),
                 }
             except Exception as e:
-                print(f"[AbuseIPDB] Block check error: {e}")
+                _logger.exception("[AbuseIPDB] Block check error: %s", e)
                 return {"network": network, "found": False, "results": []}
 
     # -------------------------------------------------------------------------

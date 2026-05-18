@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from motor import motor_asyncio
 
+from app.utils.logger import get_logger
+
 # Load environment variables
 load_dotenv()
 
@@ -15,6 +17,8 @@ DB_NAME = os.getenv("DB_NAME", "app_database")
 # Database client (global variable)
 client = None
 
+_logger = get_logger("app.database.mongodb")
+
 
 # Lifespan context manager
 @asynccontextmanager
@@ -24,16 +28,25 @@ async def lifespan(app: FastAPI):
     try:
         client = motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
         await client.admin.command("ping")
-        print("Connected to MongoDB Atlas")
+        _logger.info("Connected to MongoDB Atlas")
+        
+        # Create indexes on startup
+        try:
+            db = client[DB_NAME]
+            from app.database.create_indexes import create_indexes
+            await create_indexes(db)
+        except Exception as e:
+            _logger.warning("Failed to create/verify indexes: %s", e)
+        
         yield
     except Exception as e:
-        print(f"Error connecting to MongoDB Atlas: {e}")
+        _logger.exception("Error connecting to MongoDB Atlas: %s", e)
         raise
     finally:
         # Shutdown logic
         if client:
             client.close()
-            print("MongoDB connection closed")
+            _logger.info("MongoDB connection closed")
 
 
 # Database access function

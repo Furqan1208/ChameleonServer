@@ -12,6 +12,9 @@ from openai import OpenAI
 from app.utils.api_key_pool import APIKeyPool
 
 load_dotenv()
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.services.model")
 
 
 class ModelService:
@@ -44,12 +47,12 @@ class ModelService:
             try:
                 client = genai.Client(api_key=key)
                 clients.append(client)
-                print(f"Initialized Gemini client {idx + 1}")
+                _logger.info("Initialized Gemini client %d", idx + 1)
             except Exception as e:
-                print(f"Failed to initialize Gemini client {idx + 1}: {str(e)}")
+                _logger.exception("Failed to initialize Gemini client %d: %s", idx + 1, str(e))
 
         if not clients:
-            print("Warning: No Gemini clients initialized")
+            _logger.warning("No Gemini clients initialized")
 
         return clients
 
@@ -291,9 +294,7 @@ class ModelService:
 
             try:
                 task_label = f"[{task_id}] " if task_id else ""
-                print(
-                    f"{task_label}Using Gemini key {key_idx + 1} (attempt {attempt + 1})"
-                )
+                _logger.info("%sUsing Gemini key %d (attempt %d)", task_label, key_idx + 1, attempt + 1)
 
                 response = await asyncio.to_thread(
                     client.models.generate_content,
@@ -324,7 +325,7 @@ class ModelService:
 
                 if is_rate_limit and attempt < max_attempts - 1:
                     wait_time = 2**attempt
-                    print(f"Rate limited on key {key_idx + 1}, waiting {wait_time}s...")
+                    _logger.warning("Rate limited on key %d, waiting %d s...", key_idx + 1, wait_time)
                     await asyncio.sleep(wait_time)
                     continue
                 elif not is_rate_limit:
@@ -343,7 +344,7 @@ class ModelService:
         last_error = None
 
         for client_idx, client in enumerate(clients):
-            print(f"Trying Gemini API key {client_idx + 1}/{len(clients)}")
+            _logger.info("Trying Gemini API key %d/%d", client_idx + 1, len(clients))
 
             for attempt in range(self.max_retries):
                 try:
@@ -357,7 +358,7 @@ class ModelService:
                         ),
                     )
 
-                    print(f"Success with Gemini API key {client_idx + 1}")
+                    _logger.info("Success with Gemini API key %d", client_idx + 1)
 
                     return {
                         "response": response.text,
@@ -377,14 +378,17 @@ class ModelService:
                     if is_rate_limit:
                         if attempt < self.max_retries - 1:
                             wait_time = 2**attempt
-                            print(
-                                f"Rate limited on key {client_idx + 1}, attempt {attempt + 1}. Waiting {wait_time}s..."
+                            _logger.warning(
+                                "Rate limited on key %d, attempt %d. Waiting %d s...",
+                                client_idx + 1,
+                                attempt + 1,
+                                wait_time,
                             )
                             await asyncio.sleep(wait_time)
                             continue
                         else:
-                            print(
-                                f"Rate limited on key {client_idx + 1}, moving to next key"
+                            _logger.warning(
+                                "Rate limited on key %d, moving to next key", client_idx + 1
                             )
                             break
                     else:

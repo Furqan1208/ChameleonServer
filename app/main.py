@@ -1,6 +1,8 @@
 # D:\FYP\ChameleonServer\app\main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.controllers import ml_routes
 
@@ -9,6 +11,9 @@ from app.controllers.auth_routes import router as auth_router
 from app.controllers.threat_intel_routes import router as threat_intel_router
 from app.controllers.user_routes import router as user_router
 from app.database.mongodb import lifespan
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.main")
 
 # Initialize FastAPI app with lifespan
 app = FastAPI(
@@ -22,7 +27,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # For production, specify your frontend URL
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,7 +50,38 @@ except Exception:
     pass
 
 
-@app.get("/")
+# Global exception handler for unhandled exceptions
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and log them"""
+    _logger.exception(
+        "Unhandled exception in %s %s: %s",
+        request.method,
+        request.url.path,
+        str(exc),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "type": type(exc).__name__},
+    )
+
+
+# Exception handler for HTTPException (FastAPI's version)
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Log HTTP exceptions for audit/debugging"""
+    if exc.status_code >= 500:
+        _logger.error(
+            "HTTP %d in %s %s: %s",
+            exc.status_code,
+            request.method,
+            request.url.path,
+            exc.detail,
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 async def root():
     return {
         "message": "Welcome to Chameleon AI Malware Analysis Server",

@@ -39,15 +39,25 @@ ENV/
 *.swp
 *.swo
 
-# Logs
-logs
+# Logs & Data
+logs/
+logs*.log
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+analysis_reports/
 
 # Testing
 .coverage
+.pytest_cache/
+htmlcov/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
 htmlcov/
 .pytest_cache/
 

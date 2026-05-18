@@ -1,516 +1,567 @@
+"""
+Target Processing Parser - Extracts everything except strings, dirents, resources.
+Keeps sections limited to name, size, characteristics, entropy.
+Output: { "full": {...}, "ai_summary": {...} }
+"""
+
 import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from app.models.targetModel import (
+    Detection,
+    DetectionDetail,
+    DigitalSigner,
+    DirectoryEntry,
+    ExtractedFile,
+    GuestSigner,
+    GuestSignersContainer,
+    ImportedDLL,
+    ImportFunction,
+    PEInfo,
+    ResourceEntry,
+    SectionEntry,
+    SelfExtractEntry,
+    TargetAISummary,
+    TargetFile,
+    TargetModel,
+    TargetSection,
+    VersionInfoEntry,
+    YaraMatch,
+)
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.parser.target")
+
+# Limits for AI summary
+_MAX_FAMILIES = 5
+_MAX_SIGNERS = 3
+_MAX_YARA_RULES = 20
+_MAX_DIE_ENTRIES = 10
+_MAX_EXTRACTED_FILES = 5
+_MAX_HIGH_ENTROPY_SECTIONS = 5
 
 
-class GuestSigner(BaseModel):
-    name: Optional[str] = Field(None)
-    issued_to: Optional[str] = Field(None, alias="Issued to")
-    issued_by: Optional[str] = Field(None, alias="Issued by")
-    expires: Optional[str] = Field(None, alias="Expires")
-    sha1_hash: Optional[str] = Field(None, alias="SHA1 hash")
-
-
-class DigitalSigner(BaseModel):
-    subject: Optional[str] = Field(None, alias="subject_commonName")
-    issuer: Optional[str] = Field(None, alias="issuer_commonName")
-    country: Optional[str] = Field(None, alias="subject_countryName")
-    valid_from: Optional[str] = Field(None, alias="not_before")
-    valid_to: Optional[str] = Field(None, alias="not_after")
-    sha1_fingerprint: Optional[str] = Field(None, alias="sha1_fingerprint")
-    sha256_fingerprint: Optional[str] = Field(None, alias="sha256_fingerprint")
-
-
-class PESigningInfo(BaseModel):
-    signed: bool = False
-    signing_timestamp: Optional[str] = None
-    signing_error: Optional[str] = None
-    guest_signers: List[GuestSigner] = Field(default_factory=list)
-    digital_signers: List[DigitalSigner] = Field(default_factory=list)
-
-
-class ExtractedFile(BaseModel):
-    name: Optional[str] = None
-    path: Optional[str] = None
-    size: Optional[int] = None
-    type: Optional[str] = None
-    crc32: Optional[str] = None
-    md5: Optional[str] = None
-    sha1: Optional[str] = None
-    sha256: Optional[str] = None
-    sha512: Optional[str] = None
-    ssdeep: Optional[str] = None
-    tlsh: Optional[str] = None
-    sha3_384: Optional[str] = None
-    extracted_from: Optional[List[str]] = Field(default_factory=list)
-    die_summary: Optional[List[str]] = None
-
-
-class SelfExtractInfo(BaseModel):
-    extracted_files_count: int = 0
-    extracted_files_time: Optional[float] = None
-    extracted_files: List[ExtractedFile] = Field(default_factory=list)
-    password_used: Optional[str] = None
-
-
-class ImportInfo(BaseModel):
-    dll: str
-    count: int
-    top_imports: List[str]
-
-
-class ExportInfo(BaseModel):
-    count: int
-    names: Optional[List[str]] = None
-
-
-class DirectoryEntry(BaseModel):
-    name: str
-    virtual_address: Optional[str] = None
-    size: Optional[str] = None
-
-
-class SectionInfo(BaseModel):
-    name: str
-    virtual_address: Optional[str] = None
-    raw_address: Optional[str] = None
-    virtual_size: Optional[str] = None
-    raw_size: Optional[str] = None
-    entropy: Optional[float] = None
-    flags: Optional[str] = None
-
-
-class OverlayInfo(BaseModel):
-    offset: Optional[str] = None
-    size: Optional[str] = None
-
-
-class ResourceInfo(BaseModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
-    offset: Optional[str] = None
-    size: Optional[str] = None
-    entropy: Optional[float] = None
-    language: Optional[str] = None
-
-
-class PEBasicInfo(BaseModel):
-    imagebase: Optional[str] = None
-    entrypoint: Optional[str] = None
-    ep_bytes: Optional[str] = None
-    reported_checksum: Optional[str] = None
-    actual_checksum: Optional[str] = None
-    osversion: Optional[str] = None
-    pdbpath: Optional[str] = None
-    peid_signatures: Optional[List[str]] = None
-    imported_dlls: List[ImportInfo] = Field(default_factory=list)
-    exports_summary: Optional[ExportInfo] = None
-    exported_dll_name: Optional[str] = None
-    directories: List[DirectoryEntry] = Field(default_factory=list)
-    sections: List[SectionInfo] = Field(default_factory=list)
-    overlay: Optional[OverlayInfo] = None
-    resources: List[ResourceInfo] = Field(default_factory=list)
-    imphash: Optional[str] = None
-    timestamp: Optional[str] = None
-    icon_hash: Optional[str] = None
-    icon_fuzzy: Optional[str] = None
-    icon_dhash: Optional[str] = None
-
-
-class PEStructureParser:
+class TargetParser:
+    """Parser for Target section - produces full model + AI summary."""
+    
+    # Critical YARA patterns for family detection
+    CRITICAL_YARA_PATTERNS = [
+        "XWorm", "NanoCore", "DCRat", "Quasar", "AsyncRAT", "VenomRAT",
+        "DarkComet", "AgentTesla", "Loki", "Formbook", "Remcos"
+    ]
+    
     @staticmethod
-    def parse_imports(imports_data: Dict[str, Any]) -> List[ImportInfo]:
-        imports_summary = []
-        if isinstance(imports_data, dict):
-            for dll_name, dll_info in imports_data.items():
-                if isinstance(dll_info, dict):
-                    imports_list = dll_info.get("imports", [])
-                    imports_summary.append(
-                        ImportInfo(
-                            dll=dll_info.get("dll", dll_name),
-                            count=len(imports_list),
-                            top_imports=[
-                                imp.get("name")
-                                for imp in imports_list[:5]
-                                if imp.get("name")
-                            ],
-                        )
-                    )
-        return imports_summary
-
-    @staticmethod
-    def parse_exports(exports_data: List[Any]) -> Optional[ExportInfo]:
-        if not exports_data:
+    def parse(report_path: Path) -> Optional[Dict[str, Any]]:
+        """
+        Parse target section from report.
+        Returns: { "full": {...}, "ai_summary": {...} }
+        """
+        try:
+            # Extract raw data
+            raw_target = TargetParser._extract_raw_target(report_path)
+            detections = TargetParser._extract_detections(report_path)
+            detections2pid = TargetParser._extract_detections2pid(report_path)
+            
+            if not raw_target:
+                _logger.warning("No target section found in report")
+                return None
+            
+            # Build full model (with all data except strings, dirents, full resources)
+            full_result = TargetParser._parse_full_model(raw_target, detections, detections2pid)
+            
+            # Generate AI summary
+            ai_summary = TargetParser._generate_ai_summary(full_result)
+            
+            return {
+                "full": full_result.model_dump(exclude_none=True),
+                "ai_summary": ai_summary.model_dump(exclude_none=True)
+            }
+            
+        except Exception as e:
+            _logger.exception(f"Error parsing target section: {e}")
             return None
-
-        names = []
-        for exp in exports_data[:10]:
-            if isinstance(exp, dict) and exp.get("name"):
-                names.append(exp["name"])
-            elif isinstance(exp, str):
-                names.append(exp)
-
-        return ExportInfo(count=len(exports_data), names=names if names else None)
-
+    
     @staticmethod
-    def parse_directories(directories_data: List[Dict]) -> List[DirectoryEntry]:
-        directories = []
-        for entry in directories_data[:15]:
-            if isinstance(entry, dict):
-                directories.append(
-                    DirectoryEntry(
-                        name=entry.get("name", ""),
-                        virtual_address=entry.get("virtual_address"),
-                        size=entry.get("size"),
-                    )
-                )
-        return directories
-
+    def _extract_raw_target(report_path: Path) -> Dict[str, Any]:
+        """Extract raw target section from CAPE report."""
+        try:
+            with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+                data = json.load(f)
+            
+            if isinstance(data, dict):
+                return data.get("target", {})
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "target" in item:
+                        return item["target"]
+            return {}
+        except Exception as e:
+            _logger.error(f"Error extracting target: {e}")
+            return {}
+    
     @staticmethod
-    def parse_sections(sections_data: List[Dict]) -> List[SectionInfo]:
-        sections = []
-        for sec in sections_data:
-            if isinstance(sec, dict):
-                sections.append(
-                    SectionInfo(
-                        name=sec.get("name", ""),
-                        virtual_address=sec.get("virtual_address"),
-                        raw_address=sec.get("raw_address"),
-                        virtual_size=sec.get("virtual_size"),
-                        raw_size=sec.get("size_of_data"),
-                        entropy=sec.get("entropy"),
-                        flags=sec.get("characteristics"),
-                    )
-                )
-        return sections
-
+    def _extract_detections(report_path: Path) -> List[Dict[str, Any]]:
+        """Extract detections from root level."""
+        try:
+            with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+                data = json.load(f)
+            
+            if isinstance(data, dict):
+                return data.get("detections", [])
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "detections" in item:
+                        return item["detections"]
+            return []
+        except Exception:
+            return []
+    
     @staticmethod
-    def parse_overlay(overlay_info: Dict[str, Any]) -> Optional[OverlayInfo]:
-        if overlay_info and isinstance(overlay_info, dict):
-            return OverlayInfo(
-                offset=overlay_info.get("offset"),
-                size=overlay_info.get("size"),
-            )
-        return None
-
+    def _extract_detections2pid(report_path: Path) -> Dict[str, List[str]]:
+        """Extract detections2pid from root level."""
+        try:
+            with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+                data = json.load(f)
+            
+            if isinstance(data, dict):
+                return data.get("detections2pid", {})
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "detections2pid" in item:
+                        return item["detections2pid"]
+            return {}
+        except Exception:
+            return {}
+    
     @staticmethod
-    def parse_resources(resources_data: List[Dict]) -> List[ResourceInfo]:
-        resources = []
-        for res in resources_data[:10]:
-            if isinstance(res, dict):
-                resources.append(
-                    ResourceInfo(
-                        name=res.get("name"),
-                        type=res.get("name"),
-                        offset=res.get("offset"),
-                        size=res.get("size"),
-                        entropy=res.get("entropy"),
-                        language=res.get("language"),
-                    )
-                )
-        return resources
-
-    @classmethod
-    def parse_pe_data(cls, pe_data: Dict[str, Any]) -> PEBasicInfo:
-        if not pe_data:
-            return PEBasicInfo()
-
-        ep_bytes = pe_data.get("ep_bytes")
-        shortened_ep_bytes = (
-            ep_bytes[:20] + "..." if ep_bytes and len(ep_bytes) > 20 else ep_bytes
+    def _parse_full_model(raw_target: Dict[str, Any], detections: List[Dict],
+                          detections2pid: Dict[str, List[str]]) -> TargetModel:
+        """Parse raw target data into complete model."""
+        
+        file_data = raw_target.get("file", {})
+        pe_data = file_data.get("pe", {})
+        
+        # === Parse PE Info (excluding strings, dirents, resources) ===
+        pe_info = TargetParser._parse_pe_info(pe_data) if pe_data else None
+        
+        # === Parse Target File (excluding strings) ===
+        target_file = TargetParser._parse_target_file(file_data, pe_info)
+        
+        # === Parse Target Section ===
+        target_section = TargetSection(
+            category=raw_target.get("category"),
+            file=target_file
         )
-
-        return PEBasicInfo(
-            imagebase=pe_data.get("imagebase"),
-            entrypoint=pe_data.get("entrypoint"),
-            ep_bytes=shortened_ep_bytes,
-            reported_checksum=pe_data.get("reported_checksum"),
-            actual_checksum=pe_data.get("actual_checksum"),
-            osversion=pe_data.get("osversion"),
-            pdbpath=pe_data.get("pdbpath"),
-            peid_signatures=pe_data.get("peid_signatures") or [],
-            imported_dlls=cls.parse_imports(pe_data.get("imports", {})),
-            exports_summary=cls.parse_exports(pe_data.get("exports", [])),
-            exported_dll_name=pe_data.get("exported_dll_name"),
-            directories=cls.parse_directories(pe_data.get("dirents", [])),
-            sections=cls.parse_sections(pe_data.get("sections", [])),
-            overlay=cls.parse_overlay(pe_data.get("overlay", {})),
-            resources=cls.parse_resources(pe_data.get("resources", [])),
-            imphash=pe_data.get("imphash"),
-            timestamp=pe_data.get("timestamp"),
-            icon_hash=pe_data.get("icon_hash"),
-            icon_fuzzy=pe_data.get("icon_fuzzy"),
-            icon_dhash=pe_data.get("icon_dhash"),
+        
+        # === Parse Detections ===
+        detection_objects = []
+        for detection in detections:
+            if isinstance(detection, dict):
+                details = []
+                for detail in detection.get("details", []):
+                    if isinstance(detail, dict):
+                        details.append(DetectionDetail(
+                            Yara=detail.get("Yara"),
+                            extra={k: v for k, v in detail.items() if k != "Yara"}
+                        ))
+                
+                detection_objects.append(Detection(
+                    family=detection.get("family", "Unknown"),
+                    details=details
+                ))
+        
+        return TargetModel(
+            target=target_section,
+            detections=detection_objects,
+            detections2pid=detections2pid
         )
-
-
-class TargetModel(BaseModel):
-    category: str = "unknown"
-    file_name: Optional[str] = None
-    file_path: Optional[str] = None
-    file_size: Optional[int] = None
-    file_type: Optional[str] = None
-    md5: Optional[str] = None
-    sha1: Optional[str] = None
-    sha256: Optional[str] = None
-    sha512: Optional[str] = None
-    ssdeep: Optional[str] = None
-    tlsh: Optional[str] = None
-    yara_hits: int = 0
-    cape_yara_hits: int = 0
-    clamav_hits: int = 0
-    pe_info: Optional[PESigningInfo] = None
-    pe_structure: Optional[PEBasicInfo] = None
-    die_summary: List[str] = Field(default_factory=list)
-    self_extract: Optional[SelfExtractInfo] = None
-    cape_type_code: Optional[int] = None
-    cape_type: Optional[str] = None
-
-    @classmethod
-    def from_cape_data(cls, target_data: Dict[str, Any]) -> "TargetModel":
-        file_data = target_data.get("file", {})
-        pe_data = file_data.get("pe", {}) or {}
-
-        pe_info = cls._parse_pe_signing_info(pe_data)
-        die_summary = file_data.get("die", [])
-        self_extract = cls._parse_self_extract_info(file_data)
-
-        cape_type_code = file_data.get("cape_type_code")
-        cape_type = file_data.get("cape_type")
-
-        return cls(
-            category=target_data.get("category", "unknown"),
-            file_name=file_data.get("name"),
-            file_path=file_data.get("path"),
-            file_size=file_data.get("size"),
-            file_type=file_data.get("type"),
+    
+    @staticmethod
+    def _parse_target_file(file_data: Dict[str, Any], pe_info: Optional[PEInfo]) -> TargetFile:
+        """Parse target.file (excluding strings)."""
+        
+        # Parse YARA matches
+        yara_matches = []
+        for yara in file_data.get("yara", []):
+            if isinstance(yara, dict):
+                yara_matches.append(YaraMatch(
+                    name=yara.get("name", ""),
+                    meta=yara.get("meta"),
+                    strings=yara.get("strings")[:10] if yara.get("strings") else None,
+                    addresses=yara.get("addresses")
+                ))
+        
+        cape_yara_matches = []
+        for yara in file_data.get("cape_yara", []):
+            if isinstance(yara, dict):
+                cape_yara_matches.append(YaraMatch(
+                    name=yara.get("name", ""),
+                    meta=yara.get("meta"),
+                    strings=yara.get("strings")[:10] if yara.get("strings") else None,
+                    addresses=yara.get("addresses")
+                ))
+        
+        # Parse self-extract (excluding strings from extracted files)
+        selfextract = {}
+        for key, value in file_data.get("selfextract", {}).items():
+            if isinstance(value, dict):
+                extracted_files = []
+                for ef in value.get("extracted_files", [])[:_MAX_EXTRACTED_FILES]:
+                    if isinstance(ef, dict):
+                        extracted_files.append(ExtractedFile(
+                            name=ef.get("name"),
+                            path=ef.get("path"),
+                            guest_paths=ef.get("guest_paths"),
+                            size=ef.get("size"),
+                            crc32=ef.get("crc32"),
+                            md5=ef.get("md5"),
+                            sha1=ef.get("sha1"),
+                            sha256=ef.get("sha256"),
+                            sha512=ef.get("sha512"),
+                            sha3_384=ef.get("sha3_384"),
+                            rh_hash=ef.get("rh_hash"),
+                            ssdeep=ef.get("ssdeep"),
+                            tlsh=ef.get("tlsh"),
+                            type=ef.get("type"),
+                            yara=ef.get("yara", [])[:5],
+                            cape_yara=ef.get("cape_yara", [])[:5],
+                            clamav=ef.get("clamav", [])[:3],
+                            die=ef.get("die", [])[:5],
+                            data=None,
+                        ))
+                
+                selfextract[key] = SelfExtractEntry(
+                    extracted_files=extracted_files,
+                    extracted_files_time=value.get("extracted_files_time"),
+                    password=value.get("password")
+                )
+        
+        return TargetFile(
+            # Basic file info
+            name=file_data.get("name"),
+            path=file_data.get("path"),
+            guest_paths=file_data.get("guest_paths"),
+            size=file_data.get("size"),
+            crc32=file_data.get("crc32"),
             md5=file_data.get("md5"),
             sha1=file_data.get("sha1"),
             sha256=file_data.get("sha256"),
             sha512=file_data.get("sha512"),
+            sha3_384=file_data.get("sha3_384"),
+            rh_hash=file_data.get("rh_hash"),
             ssdeep=file_data.get("ssdeep"),
             tlsh=file_data.get("tlsh"),
-            yara_hits=len(file_data.get("yara", [])),
-            cape_yara_hits=len(file_data.get("cape_yara", [])),
-            clamav_hits=len(file_data.get("clamav", [])),
-            pe_info=pe_info,
-            pe_structure=PEStructureParser.parse_pe_data(pe_data),
-            die_summary=die_summary if isinstance(die_summary, list) else [],
-            self_extract=self_extract,
-            cape_type_code=cape_type_code,
-            cape_type=cape_type,
+            type=file_data.get("type"),
+            # CAPE classification
+            cape_type=file_data.get("cape_type"),
+            cape_type_code=file_data.get("cape_type_code"),
+            # Detection results
+            yara=yara_matches,
+            cape_yara=cape_yara_matches,
+            clamav=file_data.get("clamav", [])[:10],
+            # PE info
+            pe=pe_info,
+            # Self-extract
+            selfextract=selfextract,
+            # Strings - EXCLUDED
+            strings=None,
+            # Die info
+            die=file_data.get("die"),
+            # Data
+            data=None
         )
-
+    
     @staticmethod
-    def _parse_pe_signing_info(pe_data: Dict[str, Any]) -> Optional[PESigningInfo]:
-        if not pe_data:
-            return None
-
-        guest_signers = pe_data.get("guest_signers", {}) or {}
-        digital_signers = pe_data.get("digital_signers", []) or []
-
-        return PESigningInfo(
-            signed=bool(digital_signers),
-            signing_timestamp=guest_signers.get("aux_timestamp"),
-            signing_error=guest_signers.get("aux_error_desc"),
-            guest_signers=[
-                GuestSigner(**signer)
-                for signer in guest_signers.get("aux_signers", [])[:6]
-                if isinstance(signer, dict)
-            ],
-            digital_signers=[
-                DigitalSigner(**signer)
-                for signer in digital_signers[:6]
-                if isinstance(signer, dict)
-            ],
-        )
-
-    @staticmethod
-    def _parse_self_extract_info(
-        file_data: Dict[str, Any],
-    ) -> Optional[SelfExtractInfo]:
-        selfextract_data = file_data.get("selfextract", {})
-        extracted_files = []
-
-        if selfextract_data and isinstance(selfextract_data, dict):
-            overlay_data = selfextract_data.get("overlay", {})
-            if overlay_data and isinstance(overlay_data, dict):
-                extracted_files_data = overlay_data.get("extracted_files", [])
-                for ef in extracted_files_data[:5]:
-                    if isinstance(ef, dict):
-                        extracted_files.append(
-                            ExtractedFile(
-                                name=ef.get("name"),
-                                path=ef.get("path"),
-                                size=ef.get("size"),
-                                type=ef.get("type"),
-                                crc32=ef.get("crc32"),
-                                md5=ef.get("md5"),
-                                sha1=ef.get("sha1"),
-                                sha256=ef.get("sha256"),
-                                sha512=ef.get("sha512"),
-                                ssdeep=ef.get("ssdeep"),
-                                tlsh=ef.get("tlsh"),
-                                sha3_384=ef.get("sha3_384"),
-                                extracted_from=ef.get("guest_paths", []),
-                                die_summary=ef.get("die", []),
-                            )
-                        )
-
-        if not extracted_files and not selfextract_data:
-            return None
-
-        overlay_data = selfextract_data.get("overlay", {}) if selfextract_data else {}
-        return SelfExtractInfo(
-            extracted_files_count=len(extracted_files),
-            extracted_files_time=overlay_data.get("extracted_files_time"),
-            extracted_files=extracted_files,
-            password_used=overlay_data.get("password", ""),
-        )
-
-
-class CompactJSONEncoder(json.JSONEncoder):
-    def encode(self, o):
-        if (
-            isinstance(o, list)
-            and len(o) > 0
-            and all(isinstance(item, dict) for item in o)
-        ):
-            return "[\n" + ",\n".join(self._format_dict(item) for item in o) + "\n]"
-        return super().encode(o)
-
-    def _format_dict(self, obj):
-        items = []
-        for key, value in obj.items():
-            if value is None:
-                continue
-            items.append(f'"{key}": {json.dumps(value)}')
-        return "  {" + ", ".join(items) + "}"
-
-
-class CAPEReportProcessor:
-    @staticmethod
-    def extract_target_section(report_path: Path) -> Dict[str, Any]:
-        try:
-            with open(report_path, "r", encoding="utf-8") as f:
-                report = json.load(f)
-            return report.get("target", {})
-        except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
-            print(f"Error reading report file: {e}")
-            return {}
-
-    @staticmethod
-    def clean_target_data(target_data: Dict[str, Any]) -> Dict[str, Any]:
-        model = TargetModel.from_cape_data(target_data)
-        return model.model_dump(exclude_none=True, by_alias=True)
-
-    @staticmethod
-    def save_cleaned_data(cleaned_data: Dict[str, Any], output_file: str) -> None:
-        try:
-
-            def compact_serialize(obj):
-                if isinstance(obj, dict):
-                    return {
-                        k: compact_serialize(v) for k, v in obj.items() if v is not None
-                    }
-                elif isinstance(obj, list):
-                    return [compact_serialize(item) for item in obj]
-                else:
-                    return obj
-
-            compact_data = compact_serialize(cleaned_data)
-
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(
-                    [compact_data],
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                    cls=CompactJSONEncoder,
+    def _parse_pe_info(pe_data: Dict[str, Any]) -> PEInfo:
+        """Parse PE info (excluding dirents, resources)."""
+        
+        # Parse guest signers
+        guest_signers = None
+        gs_data = pe_data.get("guest_signers", {})
+        if gs_data:
+            aux_signers = []
+            for signer in gs_data.get("aux_signers", []):
+                if isinstance(signer, dict):
+                    aux_signers.append(GuestSigner(
+                        name=signer.get("name"),
+                        issued_to=signer.get("Issued to"),
+                        issued_by=signer.get("Issued by"),
+                        expires=signer.get("Expires"),
+                        sha1_hash=signer.get("SHA1 hash"),
+                        timestamp=signer.get("aux_timestamp")
+                    ))
+            
+            guest_signers = GuestSignersContainer(
+                aux_sha1=gs_data.get("aux_sha1"),
+                aux_timestamp=gs_data.get("aux_timestamp"),
+                aux_valid=gs_data.get("aux_valid", False),
+                aux_error=gs_data.get("aux_error", False),
+                aux_error_desc=gs_data.get("aux_error_desc"),
+                aux_signers=aux_signers
+            )
+        
+        # Parse digital signers
+        digital_signers = []
+        for signer in pe_data.get("digital_signers", [])[:_MAX_SIGNERS]:
+            if isinstance(signer, dict):
+                digital_signers.append(DigitalSigner(
+                    subject=signer.get("subject"),
+                    issuer=signer.get("issuer"),
+                    serial_number=signer.get("serial_number"),
+                    sha1_fingerprint=signer.get("sha1_fingerprint"),
+                    sha256_fingerprint=signer.get("sha256_fingerprint"),
+                    not_before=signer.get("not_before"),
+                    not_after=signer.get("not_after"),
+                    subject_countryName=signer.get("subject_countryName"),
+                    subject_organizationName=signer.get("subject_organizationName"),
+                    subject_organizationalUnitName=signer.get("subject_organizationalUnitName"),
+                    issuer_countryName=signer.get("issuer_countryName"),
+                    issuer_organizationName=signer.get("issuer_organizationName"),
+                ))
+        
+        # Parse imports
+        imports_dict = {}
+        for dll_name, dll_data in pe_data.get("imports", {}).items():
+            if isinstance(dll_data, dict):
+                imports_list = []
+                for imp in dll_data.get("imports", [])[:20]:
+                    if isinstance(imp, dict):
+                        imports_list.append(ImportFunction(
+                            address=imp.get("address"),
+                            name=imp.get("name")
+                        ))
+                imports_dict[dll_name] = ImportedDLL(
+                    dll=dll_data.get("dll", dll_name),
+                    imports=imports_list
                 )
-            print(f"[+] Successfully saved parsed target data to {output_file}")
-        except Exception as e:
-            print(f"Error saving output file: {e}")
-
+        
+        # Parse sections (ONLY name, size_of_data, characteristics, entropy)
+        sections = []
+        for sec in pe_data.get("sections", []):
+            if isinstance(sec, dict):
+                sections.append(SectionEntry(
+                    name=sec.get("name", ""),
+                    size_of_data=sec.get("size_of_data"),
+                    characteristics=sec.get("characteristics"),
+                    entropy=sec.get("entropy"),
+                ))
+        
+        # Parse versioninfo (KEEP - useful for legitimacy detection)
+        versioninfo = []
+        for vinfo in pe_data.get("versioninfo", []):
+            if isinstance(vinfo, dict):
+                versioninfo.append(VersionInfoEntry(
+                    name=vinfo.get("name", ""),
+                    value=vinfo.get("value")
+                ))
+        
+        # dirents - EXCLUDED completely
+        # resources - EXCLUDED completely
+        
+        return PEInfo(
+            guest_signers=guest_signers,
+            digital_signers=digital_signers,
+            imagebase=pe_data.get("imagebase"),
+            entrypoint=pe_data.get("entrypoint"),
+            ep_bytes=pe_data.get("ep_bytes"),
+            reported_checksum=pe_data.get("reported_checksum"),
+            actual_checksum=pe_data.get("actual_checksum"),
+            osversion=pe_data.get("osversion"),
+            pdbpath=pe_data.get("pdbpath"),
+            peid_signatures=pe_data.get("peid_signatures"),
+            imphash=pe_data.get("imphash"),
+            timestamp=pe_data.get("timestamp"),
+            imported_dll_count=pe_data.get("imported_dll_count"),
+            imports=imports_dict,
+            exported_dll_name=pe_data.get("exported_dll_name"),
+            exports=pe_data.get("exports", [])[:20],
+            dirents=[],  # EXCLUDED
+            sections=sections,
+            overlay=pe_data.get("overlay"),
+            resources=[],  # EXCLUDED
+            versioninfo=versioninfo,  # KEPT for AI summary
+            icon=None,
+            icon_hash=pe_data.get("icon_hash"),
+            icon_fuzzy=pe_data.get("icon_fuzzy"),
+            icon_dhash=pe_data.get("icon_dhash"),
+        )
+    
     @staticmethod
-    def format_resources_compact(resources: List[Dict]) -> List[Dict]:
-        compact_resources = []
-        for resource in resources:
-            compact_resource = {}
-            for key, value in resource.items():
-                if value is not None:
-                    compact_resource[key] = value
-            compact_resources.append(compact_resource)
-        return compact_resources
+    def _generate_ai_summary(full: TargetModel) -> TargetAISummary:
+        """Generate compact AI summary from full model."""
+        summary = TargetAISummary()
+        
+        target_file = full.target.file if full.target else None
+        
+        if not target_file:
+            return summary
+        
+        # === Basic Identity ===
+        summary.sha256 = target_file.sha256
+        summary.md5 = target_file.md5
+        summary.file_name = target_file.name
+        summary.file_size = target_file.size
+        summary.file_type = target_file.type[:150] if target_file.type else None
+        
+        # === CAPE Classification ===
+        summary.cape_type = target_file.cape_type
+        summary.cape_type_code = target_file.cape_type_code
+        
+        # === Detected Families ===
+        families = []
+        for detection in full.detections:
+            if detection.family and detection.family not in families:
+                families.append(detection.family)
+        summary.detected_families = families[:_MAX_FAMILIES]
+        
+        # === Die Info ===
+        if target_file.die:
+            summary.die_info = target_file.die[:_MAX_DIE_ENTRIES]
+        
+        # === Signing Info ===
+        if target_file.pe and target_file.pe.digital_signers:
+            summary.is_signed = True
+            for signer in target_file.pe.digital_signers[:_MAX_SIGNERS]:
+                if signer.subject:
+                    summary.signers.append(signer.subject)
+            if target_file.pe.guest_signers:
+                summary.signing_error = target_file.pe.guest_signers.aux_error_desc
+        
+        # === .NET Indicators ===
+        if target_file.type and ".Net" in target_file.type:
+            summary.is_dotnet = True
+        
+        # Check for obfuscation in die
+        obfuscation_keywords = ["Eazfuscator", "Confuser", "Obfuscator", "Reacto"]
+        if target_file.die:
+            for die in target_file.die:
+                if any(kw.lower() in die.lower() for kw in obfuscation_keywords):
+                    summary.is_obfuscated = True
+                    break
+        
+        # === PE Indicators ===
+        if target_file.pe:
+            summary.imphash = target_file.pe.imphash
+            summary.compile_timestamp = target_file.pe.timestamp
+            summary.entrypoint = target_file.pe.entrypoint
+            summary.pdb_path = target_file.pe.pdbpath
+            
+            # High entropy sections (packing indicator)
+            for section in target_file.pe.sections:
+                if section.entropy and section.entropy > 7.0:
+                    summary.high_entropy_sections.append(section.name)
+                    summary.is_packed = True
+            summary.high_entropy_sections = summary.high_entropy_sections[:_MAX_HIGH_ENTROPY_SECTIONS]
+        
+        # === Version Info (For legitimacy detection) ===
+        if target_file.pe and target_file.pe.versioninfo:
+            for vinfo in target_file.pe.versioninfo:
+                if vinfo.name == "CompanyName":
+                    summary.company_name = vinfo.value
+                elif vinfo.name == "ProductName":
+                    summary.product_name = vinfo.value
+                elif vinfo.name == "FileDescription":
+                    summary.file_description = vinfo.value
+                elif vinfo.name == "OriginalFilename":
+                    summary.original_filename = vinfo.value
+                elif vinfo.name == "LegalCopyright":
+                    summary.legal_copyright = vinfo.value
+        
+        # === Self-Extraction ===
+        if target_file.selfextract:
+            summary.has_self_extract = True
+            for method, extract_data in target_file.selfextract.items():
+                summary.self_extract_method = method
+                summary.extracted_files_count = len(extract_data.extracted_files)
+                for ef in extract_data.extracted_files[:3]:
+                    if ef.type and ef.type not in summary.extracted_file_types:
+                        summary.extracted_file_types.append(ef.type[:50])
+                break
+        
+        # === YARA Summary ===
+        summary.yara_rule_count = len(target_file.yara)
+        summary.cape_yara_rule_count = len(target_file.cape_yara)
+        
+        # Extract critical YARA rules (family names)
+        critical_rules = []
+        for yara in target_file.yara + target_file.cape_yara:
+            for pattern in TargetParser.CRITICAL_YARA_PATTERNS:
+                if pattern.lower() in yara.name.lower():
+                    if yara.name not in critical_rules:
+                        critical_rules.append(yara.name)
+        summary.critical_yara_rules = critical_rules[:5]
+        
+        # === Process Mappings ===
+        summary.infected_processes = full.detections2pid
+        
+        # === Generate Quick Summary ===
+        summary.generate_summary()
+        
+        return summary
 
-    def process_report(self, report_file: Path) -> None:
-        if not report_file.exists():
-            print(f"Error: File '{report_file}' not found")
-            sys.exit(1)
 
-        output_file = report_file.stem + "_target_parsed.json"
+# ============================================================
+# Legacy/Compatibility Functions
+# ============================================================
 
-        print(f"[*] Processing CAPE report: {report_file}")
-
-        target_section = self.extract_target_section(report_file)
-        if not target_section:
-            print("[-] No target section found in the report")
-            sys.exit(1)
-
-        print("[*] Parsing target data...")
-        cleaned = self.clean_target_data(target_section)
-
-        if cleaned.get("pe_structure", {}).get("resources"):
-            resources = cleaned["pe_structure"]["resources"]
-            cleaned["pe_structure"]["resources"] = self.format_resources_compact(
-                resources
-            )
-
-        print("[*] Saving results...")
-        self.save_cleaned_data(cleaned, output_file)
-
-        self._print_summary(cleaned)
-
-    @staticmethod
-    def _print_summary(cleaned_data: Dict[str, Any]) -> None:
-        print("\n[+] Summary:")
-        print(f"    File: {cleaned_data.get('file_name')}")
-        print(f"    Size: {cleaned_data.get('file_size')} bytes")
-        print(f"    SHA256: {cleaned_data.get('sha256')}")
-        print(f"    Type: {cleaned_data.get('file_type')}")
-        print(f"    Signed: {cleaned_data.get('pe_info', {}).get('signed', False)}")
-        print(f"    YARA Hits: {cleaned_data.get('yara_hits', 0)}")
-
-        self_extract = cleaned_data.get("self_extract", {})
-        extracted_count = self_extract.get("extracted_files_count", 0)
-        print(f"    Extracted Files: {extracted_count}")
-
-        if extracted_count > 0:
-            print(
-                f"Extraction Time: {self_extract.get('extracted_files_time')} seconds"
-            )
-            for ef in self_extract.get("extracted_files", [])[:3]:
-                print(f"      - {ef.get('name')} ({ef.get('size')} bytes)")
-
-        if cleaned_data.get("cape_type") or cleaned_data.get("cape_type_code"):
-            print(
-                f"CAPE Type: {cleaned_data.get('cape_type')} (Code: {cleaned_data.get('cape_type_code')})"  # noqa: E501
-            )
+def parse_target_section(report_path: Path) -> Optional[Dict[str, Any]]:
+    """Main entry point - returns {full, ai_summary}."""
+    return TargetParser.parse(report_path)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python target_model.py <cape_report.json>")
-        print("Example: python target_model.py analysis_report.json")
-        sys.exit(1)
+def process_target_section(report_path: Path) -> Optional[Dict[str, Any]]:
+    """Legacy alias."""
+    return parse_target_section(report_path)
 
-    report_file = Path(sys.argv[1])
-    processor = CAPEReportProcessor()
-    processor.process_report(report_file)
 
+# ============================================================
+# Self-Execution
+# ============================================================
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        _logger.info("Usage: python target_parser.py <cape_report.json>")
+        sys.exit(1)
+    
+    report_file = Path(sys.argv[1])
+    result = parse_target_section(report_file)
+    
+    if result:
+        print("\n" + "=" * 60)
+        print("AI SUMMARY (What goes to LLM)")
+        print("=" * 60)
+        print(json.dumps(result.get("ai_summary", {}), indent=2))
+        
+        print("\n" + "=" * 60)
+        print("FULL MODEL STATISTICS")
+        print("=" * 60)
+        full = result.get("full", {})
+        target = full.get("target", {})
+        file_data = target.get("file", {})
+        
+        original_size_estimate = 500 * 1024
+        current_size = len(json.dumps(result))
+        
+        print(f"File: {file_data.get('name', 'N/A')}")
+        print(f"Size: {file_data.get('size', 'N/A')} bytes")
+        print(f"SHA256: {file_data.get('sha256', '')[:32]}...")
+        print(f"CAPE Type: {file_data.get('cape_type', 'N/A')}")
+        print(f"Detections: {len(full.get('detections', []))}")
+        print(f"detections2pid: {len(full.get('detections2pid', {}))} PIDs")
+        print(f"YARA Rules: {len(file_data.get('yara', []))}")
+        print(f"Sections: {len(file_data.get('pe', {}).get('sections', []))}")
+        
+        print("\n" + "=" * 60)
+        print("SIZE COMPARISON")
+        print("=" * 60)
+        print(f"Estimated original size: {original_size_estimate:,} bytes")
+        print(f"Current output size: {current_size:,} bytes")
+        print(f"Reduction: {(1 - current_size / original_size_estimate) * 100:.1f}%")
+        
+        ai_summary = result.get("ai_summary", {})
+        print(f"\nQuick Summary: {ai_summary.get('quick_summary', 'N/A')}")
+    else:
+        _logger.error("Failed to parse target section")
+        sys.exit(1)

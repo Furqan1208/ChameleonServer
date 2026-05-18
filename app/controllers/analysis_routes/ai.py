@@ -12,6 +12,11 @@ from app.services.ai_analysis_service import AIAnalysisService
 from app.services.database_service import DatabaseService
 from app.services.parser_service import ParserService
 from app.services.report_structure_service import report_structure_service
+from app.services.threat_intel_Integerations.unified_service import (
+    UnifiedThreatIntelService,
+)
+
+from ._analysis_helpers import extract_malscore
 
 from .dependencies import (
     get_ai_analysis_service,
@@ -99,16 +104,107 @@ async def ai_only_analysis(
 
         report_structure_service.save_parsed_report(analysis_id, parsed_data)
 
+        # =====================================================================
+        # ✅ NEW: Gather Threat Intelligence BEFORE AI Analysis
+        # =====================================================================
+        file_hash = None
+        threat_intel_context = None
+        threat_intel_full_results = None
+
+        # Try multiple locations for the file hash
+        if "metadata" in parsed_data and "sha256" in parsed_data["metadata"]:
+            file_hash = parsed_data["metadata"]["sha256"]
+        elif (
+            "sections" in parsed_data
+            and "signatures" in parsed_data["sections"]
+            and "sha256" in parsed_data["sections"]["signatures"]
+        ):
+            file_hash = parsed_data["sections"]["signatures"]["sha256"]
+        elif "target" in parsed_data and "file" in parsed_data["target"]:
+            target_file = parsed_data["target"]["file"]
+            if "sha256" in target_file:
+                file_hash = target_file["sha256"]
+
+        if file_hash:
+            print(f"\n🔍 STEP 0: Gathering Threat Intelligence...")
+            print("-" * 70)
+            print(f"Hash: {file_hash}")
+            try:
+                ti_service = UnifiedThreatIntelService()
+                threat_intel_full_results = await ti_service.unified_search(file_hash)
+
+                # Create compact summary for AI consumption
+                threat_intel_context = ti_service.minimal_summary_for_ai(
+                    threat_intel_full_results.get("results", {})
+                )
+
+                # Save threat intel results to database
+                try:
+                    await db_service.save_threat_intel(
+                        user_id=user_id,
+                        analysis_id=analysis_id,
+                        threat_intel_data=threat_intel_full_results,
+                    )
+                    print("✅ Threat Intel saved to database")
+                except Exception as e:
+                    print(f"⚠️  Failed to save threat intel to DB: {e}")
+                    # Continue even if save fails - we still have the context for AI
+
+                # Print summary for logging
+                print(f"✅ Threat Intel gathered:")
+                if "virustotal" in threat_intel_context:
+                    vt = threat_intel_context["virustotal"]
+                    print(
+                        f"   VirusTotal: {'Found' if vt.get('found') else 'Not Found'} | "
+                        f"Score: {vt.get('threat_score', 0)} | "
+                        f"Detections: {vt.get('detection_stats', {})}"
+                    )
+                if "malwarebazaar" in threat_intel_context:
+                    mb = threat_intel_context["malwarebazaar"]
+                    print(
+                        f"   MalwareBazaar: {'Found' if mb.get('found') else 'Not Found'} | "
+                        f"Samples: {mb.get('total', 0)}"
+                    )
+                if "hybrid_analysis" in threat_intel_context:
+                    ha = threat_intel_context["hybrid_analysis"]
+                    print(
+                        f"   Hybrid Analysis: {'Found' if ha.get('found') else 'Not Found'} | "
+                        f"Verdict: {ha.get('verdict', 'N/A')} | "
+                        f"Score: {ha.get('threat_score', 0)}"
+                    )
+                if "alienvault" in threat_intel_context:
+                    otx = threat_intel_context["alienvault"]
+                    print(
+                        f"   AlienVault OTX: {'Found' if otx.get('found') else 'Not Found'} | "
+                        f"Pulses: {otx.get('pulse_count', 0)} | "
+                        f"Reputation: {otx.get('reputation', 0)}"
+                    )
+                if "summary_line" in threat_intel_context:
+                    print(f"   Summary: {threat_intel_context['summary_line']}")
+                print("-" * 70)
+            except Exception as e:
+                print(f"⚠️  Threat Intel gathering failed: {e}")
+                print("   Continuing with AI analysis without threat intel context...")
+                threat_intel_context = None
+        else:
+            print("\n⚠️  No file hash found in parsed data - skipping threat intel")
+            print("-" * 70)
+
+        # =====================================================================
+        # AI Analysis (now with threat intel context)
+        # =====================================================================
         print("\n🤖 STEP 1: AI Analysis...")
         print("-" * 70)
+
         ai_analysis_result = await ai_analysis_service.analyze(
             parsed_results=parsed_data,
             model_name=model_name,
             enable_parallel=enable_parallel,
             max_parallel_sections=max_parallel_sections,
+            threat_intel_context=threat_intel_context,  # ✅ Pass threat intel to AI
         )
 
-        malscore = parsed_data["sections"]["signatures"]["malscore"]
+        malscore = extract_malscore(parsed_data)
 
         await db_service.save_ai_results(
             user_id=user_id,
@@ -121,14 +217,25 @@ async def ai_only_analysis(
 
         report_structure_service.save_ai_analysis(analysis_id, ai_analysis_result)
 
-        await db_service.update_analysis_status(
-            user_id=user_id,
-            analysis_id=analysis_id,
-            status="complete",
-            malscore=malscore,
-            sections_parsed=sections_parsed,
-            ai_sections_analyzed=ai_sections,
-        )
+        # Update status with threat intel info
+        status_update = {
+            "user_id": user_id,
+            "analysis_id": analysis_id,
+            "status": "complete",
+            "malscore": malscore,
+            "sections_parsed": sections_parsed,
+            "ai_sections_analyzed": ai_sections,
+        }
+
+        # Add threat intel status if available
+        if threat_intel_context:
+            status_update["threat_intel"] = {
+                "hash_queried": file_hash,
+                "sources_checked": len(threat_intel_full_results.get("results", {})),
+                "summary": threat_intel_context.get("summary_line", ""),
+            }
+
+        await db_service.update_analysis_status(**status_update)
 
         report_structure_service._update_metadata(
             analysis_id,
@@ -140,6 +247,8 @@ async def ai_only_analysis(
                 "completed_at": datetime.now().isoformat(),
                 "sections_parsed": sections_parsed,
                 "ai_sections_analyzed": ai_sections,
+                "threat_intel_used": threat_intel_context is not None,
+                "threat_intel_hash": file_hash,
             },
         )
 
@@ -148,6 +257,8 @@ async def ai_only_analysis(
         print(f"{'=' * 70}")
         print(f"Analysis ID: {analysis_id}")
         print(f"Threat Score: {malscore:.1f}/10")
+        if threat_intel_context:
+            print(f"Threat Intel: {threat_intel_context.get('summary_line', 'N/A')}")
         print("Stored in Database: MongoDB")
         print(f"Backup Path: {structure['root']}")
         print(f"{'=' * 70}\n")
@@ -157,13 +268,23 @@ async def ai_only_analysis(
             "filename": file.filename,
             "status": "complete",
             "message": "AI analysis completed successfully and stored in database",
-            "components": ["parsed", "ai_analysis"],
+            "components": (
+                ["parsed", "threat_intel", "ai_analysis"]
+                if threat_intel_context
+                else ["parsed", "ai_analysis"]
+            ),
             "malscore": malscore,
             "created_at": datetime.now().isoformat(),
             "storage": "mongodb",
             "backup_path": str(structure["root"]),
             "sections_parsed": sections_parsed,
             "ai_sections_analyzed": ai_sections,
+            "threat_intel_queried": threat_intel_context is not None,
+            "threat_intel_summary": (
+                threat_intel_context.get("summary_line", "")
+                if threat_intel_context
+                else ""
+            ),
         }
 
     except HTTPException:

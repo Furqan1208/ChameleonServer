@@ -1,540 +1,527 @@
-# app/parsers/network_parser.py
+"""
+Network Parser - Parses network section from CAPE report.
+Output: { "full": {...}, "ai_summary": {...} }
+"""
 
 import json
+import sys
+import ipaddress
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from collections import Counter
 
-from app.models.networkmodel import NetworkModel, NetworkTopLevel
+from app.models.networkmodel import (
+    DNSAnswer,
+    DNSRequest,
+    DeadHost,
+    DomainInfo,
+    HostInfo,
+    HTTPRequest,
+    ICMPConnection,
+    NetworkAISummary,
+    NetworkModel,
+    NetworkTopLevel,
+    PCAPNGInfo,
+    SortedConnections,
+    TCPConnection,
+    UDPConnection,
+)
+from app.utils.logger import get_logger
+
+_logger = get_logger("app.parser.network")
+
+# Limits for AI summary
+_MAX_DOMAINS = 30
+_MAX_PUBLIC_IPS = 30
+_MAX_DNS_QUERIES = 20
+_MAX_HTTP_REQUESTS = 15
+_MAX_DEAD_HOSTS = 10
+_MAX_UNIQUE_PORTS = 15
+_MAX_SUSPICIOUS_DOMAINS_TO_SHOW = 10
+
+# RFC1918 private IP ranges (not important for LLM)
+PRIVATE_IP_RANGES = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("224.0.0.0/4"),  # Multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # Reserved
+]
+
+# Suspicious domain patterns (for AI highlighting)
+SUSPICIOUS_DOMAIN_PATTERNS = [
+    r"\.tk$", r"\.ml$", r"\.ga$", r"\.cf$", r"\.gq$",
+    r"\.xyz$", r"\.club$", r"\.online$", r"\.top$", r"\.site$",
+    r"ddns", r"no-ip", r"duckdns", r"dyndns", r"dynamic-dns",
+    r"free", r"bit\.ly", r"tinyurl", r"pastebin",
+    r"c2", r"command", r"server", r"api\.", r"cdn-",
+    r"update", r"download", r"cloudflare",
+]
+
+# Suspicious ports
+SUSPICIOUS_PORTS = {22, 23, 445, 1433, 3306, 3389, 5900, 8080, 8443, 1337, 4444, 6667}
 
 
-# Configuration for what to keep/exclude
-HIGH_VALUE_DOMAINS_EXTENSIONS = {'.exe', '.dll', '.zip', '.rar', '.7z', '.ps1', '.vbs', '.js'}
-SUSPICIOUS_PORTS = {445, 139, 3389, 22, 23, 21, 1433, 3306, 5900, 5800}
-SUSPICIOUS_USER_AGENTS = {'powershell', 'curl', 'wget', 'ncsi', 'winhttp'}
-
-EXCLUDE_HTTP_FIELDS = {'data', 'body', 'version'}
-EXCLUDE_DNS_FIELDS = {'first_seen'}
-EXCLUDE_CONNECTION_FIELDS = {'offset', 'time'}
-
-
-def extract_network_data(file_path: Path) -> Optional[Dict[str, Any]]:
-    """
-    Extract the network section from a CAPE/Cuckoo report JSON file.
+class NetworkParser:
+    """Parser for network section - produces full model + AI summary."""
     
-    Args:
-        file_path: Path to the report JSON file
-        
-    Returns:
-        Dictionary containing network data or None if not found
-    """
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
-            report_data = json.load(file)
-
-        # Handle different report structures
-        if isinstance(report_data, list):
-            for item in report_data:
-                if "network" in item:
-                    return item["network"]
+    @staticmethod
+    def parse(report_path: Path) -> Optional[Dict[str, Any]]:
+        """
+        Parse network section from report.
+        Returns: { "full": {...}, "ai_summary": {...} }
+        """
+        try:
+            raw_network = NetworkParser._extract_raw_network(report_path)
+            if not raw_network:
+                return None
+            
+            full_result = NetworkParser._parse_full_model(raw_network)
+            ai_summary = NetworkParser._generate_ai_summary(full_result)
+            
+            return {
+                "full": full_result.model_dump(exclude_none=True),
+                "ai_summary": ai_summary.model_dump(exclude_none=True)
+            }
+            
+        except Exception as e:
+            _logger.exception(f"Error parsing network section: {e}")
             return None
-        elif isinstance(report_data, dict):
-            # Try direct network key
-            network = report_data.get("network")
-            if network:
-                return network
+    
+    @staticmethod
+    def _extract_raw_network(report_path: Path) -> Optional[Dict[str, Any]]:
+        """Extract raw network section from CAPE report."""
+        try:
+            with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+                data = json.load(f)
             
-            # Try behavior.network (some reports nest it)
-            behavior = report_data.get("behavior", {})
-            if isinstance(behavior, dict):
-                return behavior.get("network")
-            
+            if isinstance(data, dict):
+                return data.get("network", {})
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "network" in item:
+                        return item["network"]
             return None
-        else:
+        except Exception as e:
+            _logger.error(f"Error extracting network data: {e}")
             return None
-
-    except Exception as error:
-        print(f"Error reading report file: {error}")
-        return None
-
-
-def filter_hosts(hosts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Filter hosts to keep only those with suspicious characteristics.
     
-    Args:
-        hosts: List of host dictionaries
+    @staticmethod
+    def _parse_full_model(raw_network: Dict[str, Any]) -> NetworkModel:
+        """Parse raw network data into complete model."""
         
-    Returns:
-        Filtered list of hosts
-    """
-    if not hosts:
-        return []
-    
-    filtered = []
-    for host in hosts:
-        # Keep hosts with open ports or external IPs
-        ip = host.get("ip", "")
-        ports = host.get("ports", [])
+        # Parse hosts (keep all - they're already summarized)
+        hosts = []
+        for host in raw_network.get("hosts", []):
+            if isinstance(host, dict):
+                hosts.append(HostInfo(
+                    ip=host.get("ip", ""),
+                    country_name=host.get("country_name"),
+                    asn=host.get("asn"),
+                    asn_name=host.get("asn_name"),
+                    hostname=host.get("hostname"),
+                    inaddrarpa=host.get("inaddrarpa"),
+                    ports=host.get("ports", []),
+                ))
         
-        # Skip local/private IPs unless they have unusual ports
-        if ip.startswith(("192.168.", "10.", "172.16.", "127.0.0.")):
-            if not any(p in SUSPICIOUS_PORTS for p in ports):
-                continue
+        # Parse domains
+        domains = []
+        for domain in raw_network.get("domains", []):
+            if isinstance(domain, dict):
+                domains.append(DomainInfo(
+                    domain=domain.get("domain", ""),
+                    ip=domain.get("ip"),
+                ))
         
-        # Create filtered host entry
-        filtered_host = {
-            "ip": ip,
-            "ports": ports[:5],  # Limit to first 5 ports
-        }
+        # Parse TCP connections - keep only first 200 for full model
+        tcp_connections = []
+        for conn in raw_network.get("tcp", [])[:200]:
+            if isinstance(conn, dict):
+                tcp_connections.append(TCPConnection(
+                    src=conn.get("src", ""),
+                    sport=conn.get("sport", 0),
+                    dst=conn.get("dst", ""),
+                    dport=conn.get("dport", 0),
+                    offset=conn.get("offset", 0),
+                    time=conn.get("time", 0.0),
+                ))
         
-        # Add ASN info if available (valuable for threat intel)
-        if host.get("asn") and host.get("asn") != "":
-            filtered_host["asn"] = host.get("asn")
-        if host.get("country_name") and host.get("country_name") != "unknown":
-            filtered_host["country"] = host.get("country_name")
+        # Parse UDP connections - keep only first 200 for full model
+        udp_connections = []
+        for conn in raw_network.get("udp", [])[:200]:
+            if isinstance(conn, dict):
+                udp_connections.append(UDPConnection(
+                    src=conn.get("src", ""),
+                    sport=conn.get("sport", 0),
+                    dst=conn.get("dst", ""),
+                    dport=conn.get("dport", 0),
+                    offset=conn.get("offset", 0),
+                    time=conn.get("time", 0.0),
+                ))
+        
+        # Parse ICMP
+        icmp = []
+        for icmp_item in raw_network.get("icmp", []):
+            if isinstance(icmp_item, dict):
+                icmp.append(ICMPConnection(
+                    src=icmp_item.get("src"),
+                    dst=icmp_item.get("dst"),
+                    type=icmp_item.get("type"),
+                    code=icmp_item.get("code"),
+                ))
+        
+        # Parse HTTP
+        http_requests = []
+        for req in raw_network.get("http", [])[:100]:
+            if isinstance(req, dict):
+                try:
+                    http_requests.append(HTTPRequest(
+                        count=req.get("count", 0),
+                        host=req.get("host", ""),
+                        port=req.get("port", 0),
+                        data=req.get("data", ""),
+                        uri=req.get("uri", ""),
+                        body=req.get("body", ""),
+                        path=req.get("path", ""),
+                        user_agent=req.get("user-agent", ""),
+                        version=req.get("version", ""),
+                        method=req.get("method", ""),
+                        first_seen=req.get("first_seen", 0.0),
+                    ))
+                except Exception as e:
+                    _logger.warning(f"Failed to parse HTTP request: {e}")
+                    continue
+        
+        # Parse DNS
+        dns_queries = []
+        for dns in raw_network.get("dns", []):
+            if isinstance(dns, dict):
+                answers = []
+                for ans in dns.get("answers", []):
+                    if isinstance(ans, dict):
+                        answers.append(DNSAnswer(
+                            type=ans.get("type", ""),
+                            data=ans.get("data", ""),
+                            ttl=ans.get("ttl"),
+                        ))
+                dns_queries.append(DNSRequest(
+                    request=dns.get("request", ""),
+                    type=dns.get("type", ""),
+                    answers=answers,
+                    first_seen=dns.get("first_seen", 0.0),
+                ))
+        
+        # Parse dead hosts
+        dead_hosts = []
+        raw_dead_hosts = raw_network.get("dead_hosts", [])
+        for item in raw_dead_hosts:
+            if isinstance(item, list) and len(item) == 2:
+                dead_hosts.append(DeadHost(ip=item[0], port=item[1]))
+            elif isinstance(item, dict):
+                dead_hosts.append(DeadHost(ip=item.get("ip", ""), port=item.get("port", 0)))
+        
+        # Parse sorted connections (limit)
+        sorted_data = raw_network.get("sorted", {})
+        sorted_connections = None
+        if sorted_data:
+            sorted_tcp = []
+            for conn in sorted_data.get("tcp", [])[:100]:
+                if isinstance(conn, dict):
+                    sorted_tcp.append(TCPConnection(
+                        src=conn.get("src", ""),
+                        sport=conn.get("sport", 0),
+                        dst=conn.get("dst", ""),
+                        dport=conn.get("dport", 0),
+                        offset=conn.get("offset", 0),
+                        time=conn.get("time", 0.0),
+                    ))
             
-        filtered.append(filtered_host)
-    
-    return filtered
-
-
-def filter_domains(domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Filter domains to identify potentially malicious ones.
-    
-    Args:
-        domains: List of domain dictionaries
+            sorted_udp = []
+            for conn in sorted_data.get("udp", [])[:100]:
+                if isinstance(conn, dict):
+                    sorted_udp.append(UDPConnection(
+                        src=conn.get("src", ""),
+                        sport=conn.get("sport", 0),
+                        dst=conn.get("dst", ""),
+                        dport=conn.get("dport", 0),
+                        offset=conn.get("offset", 0),
+                        time=conn.get("time", 0.0),
+                    ))
+            
+            sorted_connections = SortedConnections(
+                tcp=sorted_tcp,
+                udp=sorted_udp,
+            )
         
-    Returns:
-        Filtered list of domains
-    """
-    if not domains:
-        return []
+        # Parse PCAPNG info
+        pcapng = None
+        if raw_network.get("pcapng"):
+            pcapng = PCAPNGInfo(sha256=raw_network["pcapng"].get("sha256", ""))
+        
+        return NetworkModel(
+            pcap_sha256=raw_network.get("pcap_sha256"),
+            sorted_pcap_sha256=raw_network.get("sorted_pcap_sha256"),
+            hosts=hosts,
+            domains=domains,
+            tcp=tcp_connections,
+            udp=udp_connections,
+            icmp=icmp,
+            http=http_requests,
+            dns=dns_queries,
+            smtp=raw_network.get("smtp", []),
+            irc=raw_network.get("irc", []),
+            dead_hosts=dead_hosts,
+            sorted=None,
+            pcapng=pcapng,
+        )
     
-    # Group domains by domain name to identify unique ones
-    domain_dict = {}
-    for domain in domains:
-        name = domain.get("domain", "")
-        if not name:
-            continue
-            
-        # Skip common benign domains
-        if name in ("www.msftconnecttest.com", "ctldl.windowsupdate.com", 
-                   "www.msftncsi.com", "dns.msftncsi.com"):
-            continue
-            
-        # Track unique domains with their IPs
-        if name not in domain_dict:
-            domain_dict[name] = {
-                "domain": name,
-                "ip": domain.get("ip", ""),
-                "tld": name.split('.')[-1] if '.' in name else "",
+    @staticmethod
+    def _is_private_ip(ip_str: str) -> bool:
+        """Check if an IP address is private (RFC1918)."""
+        if not ip_str:
+            return True
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            for private_range in PRIVATE_IP_RANGES:
+                if ip in private_range:
+                    return True
+            return False
+        except ValueError:
+            # Not a valid IP (might be hostname or empty)
+            return True
+    
+    @staticmethod
+    def _is_public_ip(ip_str: str) -> bool:
+        """Check if an IP address is public (not private)."""
+        return not NetworkParser._is_private_ip(ip_str)
+    
+    @staticmethod
+    def _extract_public_ips_from_connections(connections: List[Union[TCPConnection, UDPConnection]]) -> Set[str]:
+        """Extract unique public IPs from connection list."""
+        public_ips = set()
+        for conn in connections:
+            if conn.dst and NetworkParser._is_public_ip(conn.dst):
+                public_ips.add(conn.dst)
+            if conn.src and NetworkParser._is_public_ip(conn.src):
+                public_ips.add(conn.src)
+        return public_ips
+    
+    @staticmethod
+    def _get_connection_stats(connections: List[Union[TCPConnection, UDPConnection]]) -> Dict[str, Any]:
+        """Get statistics about connections (counts, unique ports, unique destinations)."""
+        if not connections:
+            return {
+                "total": 0,
+                "unique_ports": [],
+                "unique_destinations": [],
+                "port_counts": {},
+                "suspicious_ports": [],
             }
-            
-            # Check for suspicious TLDs
-            suspicious_tlds = {'.ru', '.cn', '.tk', '.xyz', '.top', '.club', '.work'}
-            if domain_dict[name]["tld"] in suspicious_tlds:
-                domain_dict[name]["suspicious_tld"] = True
-    
-    return list(domain_dict.values())[:20]  # Limit to top 20 domains
-
-
-def filter_http_traffic(http_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Extract important HTTP traffic indicators.
-    
-    Args:
-        http_list: List of HTTP request dictionaries
         
-    Returns:
-        Filtered list of important HTTP requests
-    """
-    if not http_list:
-        return []
-    
-    filtered = []
-    for http in http_list:
-        # Skip if missing key data
-        if not http.get("host") or not http.get("uri"):
-            continue
-            
-        # Check for suspicious indicators
-        uri = http.get("uri", "").lower()
-        host = http.get("host", "").lower()
-        user_agent = http.get("user-agent", "").lower()
-        method = http.get("method", "")
+        ports = []
+        destinations = []
+        for conn in connections:
+            ports.append(conn.dport)
+            destinations.append(conn.dst)
         
-        # Skip common Microsoft connectivity tests
-        if "msftconnecttest.com" in host or "msftncsi.com" in host:
-            continue
-            
-        # Create filtered entry with key indicators
-        filtered_entry = {
-            "method": method,
-            "host": host,
-            "path": http.get("path", ""),
-            "user_agent": user_agent[:100] if user_agent else "",  # Truncate long UAs
-            "count": http.get("count", 1),
+        port_counter = Counter(ports)
+        dest_counter = Counter(destinations)
+        
+        # Get suspicious ports found
+        suspicious_ports_found = [p for p in set(ports) if p in SUSPICIOUS_PORTS]
+        
+        return {
+            "total": len(connections),
+            "unique_ports": sorted(set(ports))[:_MAX_UNIQUE_PORTS],
+            "unique_destinations": list(dest_counter.keys())[:_MAX_UNIQUE_PORTS],
+            "port_counts": dict(port_counter.most_common(_MAX_UNIQUE_PORTS)),
+            "suspicious_ports": suspicious_ports_found,
         }
-        
-        # Flag suspicious patterns
-        suspicious = False
-        
-        # Check for file downloads
-        if any(ext in uri for ext in HIGH_VALUE_DOMAINS_EXTENSIONS):
-            filtered_entry["file_download"] = True
-            suspicious = True
-            
-        # Check for suspicious user agents
-        if any(agent in user_agent for agent in SUSPICIOUS_USER_AGENTS):
-            filtered_entry["suspicious_ua"] = True
-            suspicious = True
-            
-        # Check for POST to non-standard paths
-        if method == "POST" and http.get("path") in ["/", ""]:
-            filtered_entry["post_to_root"] = True
-            suspicious = True
-            
-        if suspicious or filtered_entry.get("count", 0) > 5:
-            filtered_entry["flagged"] = True
-
-        # Include all non-Microsoft HTTP traffic (not just flagged)
-        filtered.append(filtered_entry)
     
-    return filtered[:30]  # Limit to top 30 requests
-
-
-def filter_dns_queries(dns_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Extract important DNS queries and responses.
-    
-    Args:
-        dns_list: List of DNS query dictionaries
+    @staticmethod
+    def _is_suspicious_domain(domain: str) -> Tuple[bool, List[str]]:
+        """Check if a domain looks suspicious and return matching patterns."""
+        if not domain:
+            return False, []
         
-    Returns:
-        Filtered list of important DNS queries
-    """
-    if not dns_list:
-        return []
-    
-    # Track unique queries with their answers
-    query_dict = {}
-    
-    for dns in dns_list:
-        request = dns.get("request", "")
-        if not request:
-            continue
-            
-        # Skip common benign queries
-        if request in ("www.msftconnecttest.com", "ctldl.windowsupdate.com", 
-                      "www.msftncsi.com", "dns.msftncsi.com", "time.windows.com"):
-            continue
-            
-        # Get answers
-        answers = dns.get("answers", [])
-        answer_data = []
+        domain_lower = domain.lower()
+        matched_patterns = []
         
-        for ans in answers:
-            if ans.get("type") == "A" and ans.get("data"):
-                answer_data.append(ans.get("data"))
+        for pattern in SUSPICIOUS_DOMAIN_PATTERNS:
+            if re.search(pattern, domain_lower, re.IGNORECASE):
+                matched_patterns.append(pattern)
         
-        # Create key for this query
-        if request not in query_dict:
-            query_dict[request] = {
-                "query": request,
-                "answers": answer_data[:3],  # Limit to first 3 answers
-                "type": dns.get("type", "A"),
+        return len(matched_patterns) > 0, matched_patterns
+    
+    @staticmethod
+    def _generate_ai_summary(full: NetworkModel) -> NetworkAISummary:
+        """Generate compact AI summary from full model."""
+        summary = NetworkAISummary()
+        
+        # === Domains (KEEP ALL - critical IOCs) ===
+        all_domains = []
+        suspicious_domains = []
+        suspicious_keywords = set()
+        
+        for domain_info in full.domains:
+            domain = domain_info.domain
+            if domain:
+                all_domains.append(domain)
+                is_suspicious, patterns = NetworkParser._is_suspicious_domain(domain)
+                if is_suspicious:
+                    suspicious_domains.append(domain)
+                    for pattern in patterns:
+                        # Extract keyword from pattern (remove regex special chars)
+                        keyword = pattern.replace(r"\.", "").replace(r"\$", "").replace(r"\^", "")
+                        suspicious_keywords.add(keyword)
+        
+        summary.domains = all_domains[:_MAX_DOMAINS]
+        summary.has_suspicious_domains = len(suspicious_domains) > 0
+        summary.suspicious_domain_keywords = list(suspicious_keywords)[:_MAX_SUSPICIOUS_DOMAINS_TO_SHOW]
+        
+        # === IPs (Keep only public IPs) ===
+        # Extract from hosts
+        public_ips_from_hosts = set()
+        for host in full.hosts:
+            if host.ip and NetworkParser._is_public_ip(host.ip):
+                public_ips_from_hosts.add(host.ip)
+        
+        # Extract from DNS answers
+        public_ips_from_dns = set()
+        for dns in full.dns:
+            for answer in dns.answers:
+                if answer.data and NetworkParser._is_public_ip(answer.data):
+                    public_ips_from_dns.add(answer.data)
+        
+        # Extract from TCP/UDP connections
+        public_ips_from_tcp = NetworkParser._extract_public_ips_from_connections(full.tcp)
+        public_ips_from_udp = NetworkParser._extract_public_ips_from_connections(full.udp)
+        
+        all_public_ips = public_ips_from_hosts | public_ips_from_dns | public_ips_from_tcp | public_ips_from_udp
+        summary.ips = sorted(list(all_public_ips))[:_MAX_PUBLIC_IPS]
+        
+        # === DNS Queries (Keep with answers) ===
+        dns_summaries = []
+        for dns in full.dns[:_MAX_DNS_QUERIES]:
+            dns_summary = {
+                "request": dns.request,
+                "type": dns.type,
             }
-            
-            # Flag if no answers (NXDOMAIN can be suspicious)
-            if not answer_data:
-                query_dict[request]["no_answer"] = True
-    
-    return list(query_dict.values())[:30]  # Limit to 30 unique queries
-
-
-def filter_connections(
-    connections: List[Dict[str, Any]], 
-    protocol: str
-) -> List[Dict[str, Any]]:
-    """
-    Filter network connections to keep important ones.
-    
-    Args:
-        connections: List of connection dictionaries
-        protocol: Protocol name (tcp/udp)
+            if dns.answers:
+                dns_summary["answers"] = [{"type": a.type, "data": a.data} for a in dns.answers[:3]]
+            dns_summaries.append(dns_summary)
+        summary.dns_queries = dns_summaries
+        summary.total_dns_queries = len(full.dns)
+        summary.has_dns_traffic = len(full.dns) > 0
         
-    Returns:
-        Filtered list of important connections
-    """
-    if not connections:
-        return []
-    
-    # Track unique connections (src:dst:port)
-    unique_conns = {}
-    
-    for conn in connections:
-        dst = conn.get("dst", "")
-        dport = conn.get("dport", 0)
-        src = conn.get("src", "")
-        
-        # Skip local traffic unless to unusual ports
-        if dst.startswith(("192.168.", "10.", "172.16.")):
-            if dport not in SUSPICIOUS_PORTS:
-                continue
-        
-        # Create key for unique connection
-        conn_key = f"{src}:{dst}:{dport}"
-        
-        if conn_key not in unique_conns:
-            unique_conns[conn_key] = {
-                "dst": dst,
-                "dport": dport,
-                "protocol": protocol.upper(),
+        # === HTTP Requests (Keep summary) ===
+        http_summaries = []
+        for http in full.http[:_MAX_HTTP_REQUESTS]:
+            http_summary = {
+                "method": http.method,
+                "host": http.host,
+                "path": http.path[:100] if http.path else "",
+                "port": http.port,
+                "user_agent": http.user_agent[:80] if http.user_agent else "",
             }
-            
-            # Add source if not local
-            if not src.startswith(("192.168.", "10.", "172.16.")):
-                unique_conns[conn_key]["src"] = src
-    
-    return list(unique_conns.values())[:50]  # Limit to 50 unique connections
+            # Only include body if present and not too large
+            if http.body and len(http.body) < 500:
+                http_summary["body"] = http.body[:200]
+            http_summaries.append(http_summary)
+        summary.http_requests = http_summaries
+        summary.total_http_requests = len(full.http)
+        summary.has_https_traffic = any("https" in str(req.host).lower() or req.port == 443 for req in full.http)
+        
+        # === Dead Hosts ===
+        dead_hosts_summary = []
+        for dead in full.dead_hosts[:_MAX_DEAD_HOSTS]:
+            dead_hosts_summary.append({"ip": dead.ip, "port": dead.port})
+        summary.dead_hosts = dead_hosts_summary
+        
+        # === TCP Statistics ===
+        tcp_stats = NetworkParser._get_connection_stats(full.tcp)
+        summary.total_tcp_connections = tcp_stats["total"]
+        
+        # === UDP Statistics ===
+        udp_stats = NetworkParser._get_connection_stats(full.udp)
+        summary.total_udp_connections = udp_stats["total"]
+        
+        # === Country Distribution ===
+        countries = set()
+        for host in full.hosts:
+            if host.country_name and host.country_name != "unknown":
+                countries.add(host.country_name)
+        summary.contacted_countries = sorted(list(countries))[:5]
+        
+        # === Overall network activity flag ===
+        summary.has_network_activity = (
+            len(full.domains) > 0 or
+            len(all_public_ips) > 0 or
+            len(full.dns) > 0 or
+            len(full.http) > 0 or
+            tcp_stats["total"] > 0 or
+            udp_stats["total"] > 0
+        )
+        
+        # === Generate quick summary ===
+        summary.generate_summary()
+        
+        return summary
 
 
-def filter_dead_hosts(dead_hosts: List[Any]) -> List[Dict[str, Any]]:
-    """
-    Extract dead hosts (failed connection attempts).
-    
-    Args:
-        dead_hosts: List of dead host entries
-        
-    Returns:
-        Filtered list of dead hosts
-    """
-    if not dead_hosts:
-        return []
-    
-    filtered = []
-    for item in dead_hosts:
-        if isinstance(item, (list, tuple)) and len(item) == 2:
-            filtered.append({
-                "ip": item[0],
-                "port": item[1],
-                "failed": True
-            })
-        elif isinstance(item, dict):
-            filtered.append({
-                "ip": item.get("ip", ""),
-                "port": item.get("port", 0),
-                "failed": True
-            })
-    
-    return filtered[:20]  # Limit to 20 dead hosts
-
-
-def prepare_cleaned_network(raw_network: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """
-    Clean and filter network data to extract only important fields for AI analysis.
-    
-    Args:
-        raw_network: Raw network dictionary from report
-        
-    Returns:
-        Cleaned and filtered network dictionary
-    """
-    if not raw_network:
-        return None
-
-    try:
-        # Validate with Pydantic model
-        validated_network = NetworkModel(**raw_network)
-        
-        # Build cleaned network data structure
-        cleaned_data = {
-            "network_summary": {
-                "total_hosts": len(validated_network.hosts),
-                "total_domains": len(validated_network.domains),
-                "total_http_requests": len(validated_network.http),
-                "total_dns_queries": len(validated_network.dns),
-                "has_pcap": bool(validated_network.pcap_sha256),
-            }
-        }
-        
-        # Add filtered hosts
-        if validated_network.hosts:
-            filtered_hosts = filter_hosts([h.model_dump() for h in validated_network.hosts])
-            if filtered_hosts:
-                cleaned_data["hosts"] = filtered_hosts
-        
-        # Add filtered domains
-        if validated_network.domains:
-            filtered_domains = filter_domains([d.model_dump() for d in validated_network.domains])
-            if filtered_domains:
-                cleaned_data["domains"] = filtered_domains
-        
-        # Add filtered HTTP traffic
-        if validated_network.http:
-            filtered_http = filter_http_traffic([h.model_dump() for h in validated_network.http])
-            if filtered_http:
-                cleaned_data["http_requests"] = filtered_http
-        
-        # Add filtered DNS queries
-        if validated_network.dns:
-            filtered_dns = filter_dns_queries([d.model_dump() for d in validated_network.dns])
-            if filtered_dns:
-                cleaned_data["dns_queries"] = filtered_dns
-        
-        # Add filtered connections
-        tcp_conns = []
-        if validated_network.tcp:
-            tcp_conns = filter_connections([t.model_dump() for t in validated_network.tcp], "tcp")
-        
-        udp_conns = []
-        if validated_network.udp:
-            udp_conns = filter_connections([u.model_dump() for u in validated_network.udp], "udp")
-        
-        all_conns = tcp_conns + udp_conns
-        if all_conns:
-            cleaned_data["connections"] = all_conns
-        
-        # Add dead hosts (failed connection attempts)
-        if validated_network.dead_hosts:
-            dead_dicts = [
-                h.model_dump() if hasattr(h, 'model_dump') else h
-                for h in validated_network.dead_hosts
-            ]
-            filtered_dead = filter_dead_hosts(dead_dicts)
-            if filtered_dead:
-                cleaned_data["failed_connections"] = filtered_dead
-        
-        # Extract IOC summary
-        ioc_summary = {
-            "suspicious_domains": [
-                d["domain"] for d in cleaned_data.get("domains", []) 
-                if d.get("suspicious_tld") or not d.get("ip")
-            ],
-            "suspicious_ips": [
-                h["ip"] for h in cleaned_data.get("hosts", [])
-                if h.get("ports") and any(p in SUSPICIOUS_PORTS for p in h["ports"])
-            ],
-            "file_downloads": [
-                f"{h['host']}{h['path']}" for h in cleaned_data.get("http_requests", [])
-                if h.get("file_download")
-            ],
-        }
-        cleaned_data["ioc_summary"] = ioc_summary
-        
-        return cleaned_data
-
-    except Exception as error:
-        print(f"Error processing network data: {error}")
-        return None
-
+# ============================================================
+# Legacy/Compatibility Functions
+# ============================================================
 
 def parse_network_section(report_path: Path) -> Optional[Dict[str, Any]]:
-    """
-    Main function to parse and filter network section from report.
-    
-    Args:
-        report_path: Path to the report JSON file
-        
-    Returns:
-        Cleaned network data dictionary or None if error
-    """
-    raw_network = extract_network_data(report_path)
-    return prepare_cleaned_network(raw_network)
+    """Main entry point - returns {full, ai_summary}."""
+    return NetworkParser.parse(report_path)
 
 
 def process_network_section(report_path: Path) -> Optional[Dict[str, Any]]:
-    """
-    Alias for parse_network_section for consistency with other parsers.
-    
-    Args:
-        report_path: Path to the report JSON file
-        
-    Returns:
-        Cleaned network data dictionary or None if error
-    """
+    """Legacy alias."""
     return parse_network_section(report_path)
 
 
-def get_network_iocs(report_path: Path) -> Dict[str, List[str]]:
-    """
-    Extract only IOCs (Indicators of Compromise) from network data.
-    
-    Args:
-        report_path: Path to the report JSON file
-        
-    Returns:
-        Dictionary with lists of IPs, domains, and URLs
-    """
-    cleaned = parse_network_section(report_path)
-    
-    iocs = {
-        "ips": [],
-        "domains": [],
-        "urls": [],
-        "suspicious_ports": [],
-    }
-    
-    if not cleaned:
-        return iocs
-    
-    # Extract IPs from hosts
-    for host in cleaned.get("hosts", []):
-        if host.get("ip"):
-            iocs["ips"].append(host["ip"])
-        if host.get("ports"):
-            iocs["suspicious_ports"].extend([str(p) for p in host["ports"]])
-    
-    # Extract domains
-    for domain in cleaned.get("domains", []):
-        if domain.get("domain"):
-            iocs["domains"].append(domain["domain"])
-    
-    # Extract URLs from HTTP requests
-    for http in cleaned.get("http_requests", []):
-        host = http.get("host", "")
-        path = http.get("path", "")
-        if host and path:
-            iocs["urls"].append(f"http://{host}{path}")
-    
-    # Remove duplicates
-    for key in iocs:
-        iocs[key] = list(set(iocs[key]))[:50]  # Limit to 50 per category
-    
-    return iocs
-
+# ============================================================
+# Self-Execution
+# ============================================================
 
 if __name__ == "__main__":
-    import sys
-    from pprint import pprint
-    
     if len(sys.argv) < 2:
-        print("Usage: python network_parser.py <report.json>")
+        _logger.info("Usage: python network_parser.py <cape_report.json>")
         sys.exit(1)
     
     report_file = Path(sys.argv[1])
-    output_file = report_file.parent / f"{report_file.stem}_network_parsed.json"
+    result = parse_network_section(report_file)
     
-    # Parse network section
-    cleaned_network = parse_network_section(report_file)
-    
-    if cleaned_network:
-        # Save cleaned data
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(cleaned_network, f, indent=2)
-        print(f"✅ Cleaned network data saved to: {output_file}")
+    if result:
+        print("\n" + "=" * 60)
+        print("AI SUMMARY (What goes to LLM)")
+        print("=" * 60)
+        print(json.dumps(result.get("ai_summary", {}), indent=2))
         
-        # Print summary
-        print("\n📊 NETWORK ANALYSIS SUMMARY")
-        print("=" * 50)
-        print(json.dumps(cleaned_network.get("network_summary", {}), indent=2))
+        print("\n" + "=" * 60)
+        print("FULL MODEL STATISTICS")
+        print("=" * 60)
+        full = result.get("full", {})
         
-        # Print IOCs
-        print("\n🔍 EXTRACTED IOCs")
-        print("=" * 50)
-        iocs = get_network_iocs(report_file)
-        pprint(iocs)
+        print(f"Domains: {len(full.get('domains', []))}")
+        print(f"Hosts: {len(full.get('hosts', []))}")
+        print(f"TCP connections (full): {len(full.get('tcp', []))}")
+        print(f"UDP connections (full): {len(full.get('udp', []))}")
+        print(f"DNS queries: {len(full.get('dns', []))}")
+        print(f"HTTP requests: {len(full.get('http', []))}")
+        print(f"Dead hosts: {len(full.get('dead_hosts', []))}")
+        
+        ai_summary = result.get("ai_summary", {})
+        print(f"\nPublic IPs: {len(ai_summary.get('ips', []))}")
+        print(f"Domains (AI): {len(ai_summary.get('domains', []))}")
+        print(f"DNS queries (AI): {len(ai_summary.get('dns_queries', []))}")
+        print(f"\nQuick Summary: {ai_summary.get('quick_summary', 'N/A')}")
     else:
-        print("❌ Failed to parse network section")
+        _logger.error("Failed to parse network section")
+        sys.exit(1)
