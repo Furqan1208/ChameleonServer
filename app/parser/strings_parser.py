@@ -3,10 +3,56 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 from app.utils.logger import get_logger
 
 _logger = get_logger("app.parser.strings")
+
+
+def validate_safe_path(file_path: Path, allowed_base: Path | None = None) -> Path:
+    """
+    Validate that a path is safe and doesn't escape allowed directories.
+    Prevents path traversal attacks.
+    
+    Args:
+        file_path: The path to validate
+        allowed_base: Optional base directory that the file must be within
+                     Defaults to current working directory if None
+    
+    Returns:
+        Resolved, validated path
+    
+    Raises:
+        ValueError: If path escapes the allowed directory or is absolute
+    """
+    if allowed_base is None:
+        allowed_base = Path.cwd()
+    
+    # Resolve both paths to their absolute canonical forms
+    try:
+        resolved_path = file_path.resolve()
+        allowed_base_resolved = allowed_base.resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"Invalid path: {e}")
+    
+    # Allow system temp directory as an exception for temporary files
+    temp_dir = Path.home() / "AppData" / "Local" / "Temp"
+    if temp_dir.exists() and resolved_path.is_relative_to(temp_dir.resolve()):
+        return resolved_path
+    
+    # Check if resolved path is within the allowed base directory
+    try:
+        resolved_path.relative_to(allowed_base_resolved)
+    except ValueError:
+        raise ValueError(
+            f"Path traversal detected: {file_path} escapes allowed directory {allowed_base}"
+        )
+    
+    # Ensure file extension is safe
+    if resolved_path.suffix not in ('.json', '.txt', '.log'):
+        raise ValueError(f"Unsafe file extension: {resolved_path.suffix}")
+    
+    return resolved_path
 
 
 @dataclass
@@ -205,12 +251,21 @@ def extract_dropped_strings(data: Any) -> List[str]:
 def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
     _logger.info("Processing with whitelist: %s", report_path.name)
 
+    # Validate the report path for security
     try:
-        with open(report_path, "r", encoding="utf-8", errors="ignore") as file:
+        safe_report_path = validate_safe_path(report_path)
+    except ValueError as e:
+        _logger.error("Invalid path: %s", e)
+        # Raise exception instead of killing the server
+        raise ValueError(f"Path validation failed for whitelist processing: {e}")
+
+    try:
+        with open(safe_report_path, "r", encoding="utf-8", errors="ignore") as file:
             data = json.load(file)
     except Exception as error:
         _logger.exception("Error loading JSON: %s", error)
-        sys.exit(1)
+        # Raise exception instead of killing the server
+        raise RuntimeError(f"Failed to load JSON file: {error}")
 
     _logger.info("Extracting strings from sections...")
     all_strings = extract_all_strings(data)
@@ -244,7 +299,8 @@ def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
 
         if is_whitelisted:
             clean_strings.append(string)
-            categories[category].append(string)
+            if category in categories:
+                categories[category].append(string)
         else:
             garbage_count += 1
 
@@ -255,16 +311,20 @@ def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
 
     _logger.info("Whitelist filtering complete")
     _logger.info("Total processed: %s", f"{total_processed:,}")
-    _logger.info(
-        "Whitelisted (clean): %s (%.1f%%)",
-        f"{clean_count:,}",
-        clean_count / total_processed * 100,
-    )
-    _logger.info(
-        "Garbage removed: %s (%.1f%%)",
-        f"{garbage_count:,}",
-        garbage_count / total_processed * 100,
-    )
+    if total_processed > 0:
+        _logger.info(
+            "Whitelisted (clean): %s (%.1f%%)",
+            f"{clean_count:,}",
+            clean_count / total_processed * 100,
+        )
+        _logger.info(
+            "Garbage removed: %s (%.1f%%)",
+            f"{garbage_count:,}",
+            garbage_count / total_processed * 100,
+        )
+    else:
+        _logger.warning("No strings to process")
+    
     _logger.info("Categories found: %d", len(categories))
 
     for category, strings in categories.items():
@@ -279,23 +339,31 @@ def process_whitelist_filtering(report_path: Path) -> WhitelistResults:
 
 
 def save_results(results: WhitelistResults, output_path: Path):
+    # Validate the output path for security
+    try:
+        safe_output_path = validate_safe_path(output_path)
+    except ValueError as e:
+        _logger.error("Invalid output path: %s", e)
+        # Raise exception instead of killing the server
+        raise ValueError(f"Output path validation failed: {e}")
+    
     output_data = {
         "metadata": {
             "strategy": "whitelist_only",
             "total_strings_processed": results.total_processed,
             "whitelisted_strings": len(results.clean_strings),
             "garbage_removed": results.garbage_removed,
-            "reduction_percentage": f"{(results.garbage_removed / results.total_processed) * 100:.1f}%",
+            "reduction_percentage": f"{(results.garbage_removed / results.total_processed) * 100:.1f}%" if results.total_processed > 0 else "0.0%",
             "whitelist_categories_used": list(results.categories.keys()),
         },
         "categories": results.categories,
         "all_clean_strings": results.clean_strings,
     }
 
-    with open(output_path, "w", encoding="utf-8") as file:
+    with open(safe_output_path, "w", encoding="utf-8") as file:
         json.dump(output_data, file, indent=2, ensure_ascii=False)
 
-    _logger.info("Whitelist results saved to: %s", output_path)
+    _logger.info("Whitelist results saved to: %s", safe_output_path)
 
 
 def main():
@@ -303,6 +371,10 @@ def main():
         _logger.info("Usage: python strings_model_whitelist.py <cape_report.json> [output.json]")
         sys.exit(1)
 
+    # Define the base directory for file operations
+    allowed_base = Path.cwd()
+    
+    # Create Path objects from arguments
     report_path = Path(sys.argv[1])
     output_path = (
         Path(sys.argv[2])
@@ -310,12 +382,24 @@ def main():
         else report_path.with_name(report_path.stem + "_whitelist_clean.json")
     )
 
+    # Validate paths for security before processing
+    try:
+        validate_safe_path(report_path, allowed_base)
+        validate_safe_path(output_path, allowed_base)
+    except ValueError as e:
+        _logger.error("Path validation failed: %s", e)
+        sys.exit(1)
+
     if not report_path.exists():
         _logger.error("File not found: %s", report_path)
         sys.exit(1)
 
-    results = process_whitelist_filtering(report_path)
-    save_results(results, output_path)
+    try:
+        results = process_whitelist_filtering(report_path)
+        save_results(results, output_path)
+    except (ValueError, RuntimeError) as e:
+        _logger.error("Processing failed: %s", e)
+        sys.exit(1)
 
     _logger.info("Sample whitelisted strings by category:")
     for category, strings in results.categories.items():

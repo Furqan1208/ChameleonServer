@@ -1,6 +1,10 @@
 # D:\FYP\ChameleonServer\app\controllers\analysis_routes\reports.py
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
+from bson import ObjectId
+import json
+from datetime import datetime
+from typing import Any, Dict, List
 
 from app.ml.ml_prediction_service import MLPredictionService
 
@@ -10,6 +14,25 @@ from app.services.pdf_report_service import PDFReportService
 from .dependencies import get_current_user_id, get_db_service, get_pdf_report_service
 
 router = APIRouter()
+
+
+def convert_objectid_to_str(obj: Any) -> Any:
+    """
+    Recursively convert ObjectId instances to strings for JSON serialization.
+    Also handles datetime objects and other non-serializable types.
+    """
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: convert_objectid_to_str(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_objectid_to_str(item) for item in obj)
+    else:
+        return obj
 
 
 @router.get("/reports")
@@ -27,6 +50,9 @@ async def get_all_reports(
             user_id=user_id, limit=limit, skip=skip
         )
         total = await db_service.get_analysis_count(user_id=user_id)
+
+        # Convert ObjectId to string for JSON serialization
+        analyses = convert_objectid_to_str(analyses)
 
         return {
             "status": "success",
@@ -78,6 +104,10 @@ async def get_analysis_results(
             if not result:
                 raise HTTPException(404, f"Analysis {analysis_id} not found")
             result["ml"] = ml_prediction
+            
+            # Convert ObjectId to string for JSON serialization
+            result = convert_objectid_to_str(result)
+            
             return {"status": "success", "data": result}
         else:
             analysis = await db_service.get_analysis(
@@ -86,6 +116,10 @@ async def get_analysis_results(
             if not analysis:
                 raise HTTPException(404, f"Analysis {analysis_id} not found")
             analysis["ml"] = ml_prediction
+            
+            # Convert ObjectId to string for JSON serialization
+            analysis = convert_objectid_to_str(analysis)
+            
             return {"status": "success", "data": analysis}
 
     except HTTPException:
@@ -276,7 +310,7 @@ async def download_report(
     db_service: DatabaseService = Depends(get_db_service),
 ):
     """
-    Download complete analysis report, scoped to current user.
+    Download complete analysis report as JSON, scoped to current user.
     """
     try:
         if include_all:
@@ -291,6 +325,9 @@ async def download_report(
 
         if not result:
             raise HTTPException(404, f"Analysis {analysis_id} not found")
+
+        # Convert ObjectId to string for JSON serialization
+        result = convert_objectid_to_str(result)
 
         if format.lower() == "json":
             return result
@@ -312,31 +349,25 @@ async def download_pdf_report(
 ):
     """
     Download CAPE + AI analysis report as PDF.
-    Important: this endpoint intentionally excludes Parse-tab data.
     """
     try:
-        analysis = await db_service.get_analysis(user_id=user_id, analysis_id=analysis_id)
-        if not analysis:
-            raise HTTPException(404, f"Analysis {analysis_id} not found")
-
-        cape_result = await db_service.get_cape_results(
+        # Get complete analysis data
+        result = await db_service.get_complete_analysis(
             user_id=user_id, analysis_id=analysis_id
         )
-        ai_result = await db_service.get_ai_results(user_id=user_id, analysis_id=analysis_id)
-
-        if not cape_result and not ai_result:
-            raise HTTPException(
-                404,
-                "No CAPE or AI data available for PDF generation",
-            )
-
+        
+        if not result:
+            raise HTTPException(404, f"Analysis {analysis_id} not found")
+        
+        # Convert ObjectId to string
+        result = convert_objectid_to_str(result)
+        
         pdf_bytes = await run_in_threadpool(
             pdf_report_service.generate_pdf_report,
-            analysis,
-            cape_result,
-            ai_result,
+            result  # Pass the entire result directly
         )
 
+        analysis = result.get("analysis", {})
         safe_filename = str(analysis.get("filename", "analysis_report")).replace('"', "")
         content_disposition = (
             f'attachment; filename="{analysis_id}_{safe_filename}_report.pdf"'

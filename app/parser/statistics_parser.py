@@ -20,9 +20,57 @@ _MAX_REPORTING_PREVIEW = 8
 _MAX_SIGNATURE_PREVIEW = 12
 
 
-def extract_statistics_data(report_path: Path) -> Dict[str, Any]:
+def validate_safe_path(file_path: Path, allowed_base: Path | None = None) -> Path:
+    """
+    Validate that a path is safe and doesn't escape allowed directories.
+    Prevents path traversal attacks.
+    
+    Args:
+        file_path: The path to validate
+        allowed_base: Optional base directory that the file must be within
+                     Defaults to current working directory if None
+    
+    Returns:
+        Resolved, validated path
+    
+    Raises:
+        ValueError: If path escapes the allowed directory or is absolute
+    """
+    if allowed_base is None:
+        allowed_base = Path.cwd()
+    
+    # Resolve both paths to their absolute canonical forms
     try:
-        with open(report_path, "r", encoding="utf-8", errors="ignore") as file:
+        resolved_path = file_path.resolve()
+        allowed_base_resolved = allowed_base.resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"Invalid path: {e}")
+    
+    # Check if resolved path is within the allowed base directory
+    try:
+        resolved_path.relative_to(allowed_base_resolved)
+    except ValueError:
+        raise ValueError(
+            f"Path traversal detected: {file_path} escapes allowed directory {allowed_base}"
+        )
+    
+    # Ensure file extension is safe
+    if resolved_path.suffix not in ('.json', '.txt', '.log'):
+        raise ValueError(f"Unsafe file extension: {resolved_path.suffix}")
+    
+    return resolved_path
+
+
+def extract_statistics_data(report_path: Path) -> Dict[str, Any]:
+    # Validate the report path for security
+    try:
+        safe_report_path = validate_safe_path(report_path)
+    except ValueError as e:
+        _logger.error("Invalid path: %s", e)
+        return {}
+    
+    try:
+        with open(safe_report_path, "r", encoding="utf-8", errors="ignore") as file:
             data = json.load(file)
 
         if isinstance(data, dict):
@@ -175,11 +223,18 @@ def clean_statistics(stat_data: Any) -> Dict[str, Any]:
 
 
 def save_cleaned_statistics(cleaned_data: Dict[str, Any], output_path: Path):
+    # Validate the output path for security
+    try:
+        safe_output_path = validate_safe_path(output_path)
+    except ValueError as e:
+        _logger.error("Invalid output path: %s", e)
+        return
+    
     try:
         cleaned_data = clean_empty_values(cleaned_data)
-        with open(output_path, "w", encoding="utf-8") as file:
+        with open(safe_output_path, "w", encoding="utf-8") as file:
             json.dump(cleaned_data, file, indent=2)
-        _logger.info("Statistics data saved to: %s", output_path)
+        _logger.info("Statistics data saved to: %s", safe_output_path)
     except Exception as error:
         _logger.exception("Error saving statistics data: %s", error)
 
@@ -198,9 +253,20 @@ if __name__ == "__main__":
         _logger.info("Usage: python statistics_parser.py <cape_report.json>")
         sys.exit(1)
 
+    # Define the base directory for file operations
+    allowed_base = Path.cwd()
+    
     report_file = Path(sys.argv[1])
     output_file = report_file.stem + "_statistics_parsed.json"
     output_path = Path(output_file)
+
+    # Validate paths for security before processing
+    try:
+        validate_safe_path(report_file, allowed_base)
+        validate_safe_path(output_path, allowed_base)
+    except ValueError as e:
+        _logger.error("Path validation failed: %s", e)
+        sys.exit(1)
 
     statistics_data = extract_statistics_data(report_file)
     cleaned_data = clean_statistics(statistics_data)

@@ -1,1169 +1,1659 @@
+# app/services/pdf_report_service.py
+"""
+Professional Malware Analysis PDF Report Generator
+Industry-grade design with refined color palette and professional charts
+"""
+
 from __future__ import annotations
 
-from html import escape
+import tempfile
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from pathlib import Path
-import re
-from collections import Counter
-from datetime import datetime, timezone
-from io import BytesIO
-from typing import Any
 
-from reportlab.graphics.charts.barcharts import HorizontalBarChart, VerticalBarChart
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.shapes import Drawing, Rect, String
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.lib.units import mm, cm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import (
-    Image,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    PageBreak, Image, KeepTogether, HRFlowable
 )
+from reportlab.pdfgen import canvas
+from reportlab.graphics.shapes import Drawing, Rect, Line, String, Circle, Polygon
+from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.legends import Legend
+from reportlab.lib.utils import ImageReader
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PROFESSIONAL COLOUR PALETTE
+# Muted, dark-mode-inspired palette — no neon, high contrast where needed
+# ─────────────────────────────────────────────────────────────────────────────
 
-TACTIC_BY_TECHNIQUE_PREFIX = {
-    "T1003": "Credential Access",
-    "T1027": "Defense Evasion",
-    "T1036": "Defense Evasion",
-    "T1041": "Exfiltration",
-    "T1047": "Execution",
-    "T1053": "Persistence",
-    "T1055": "Defense Evasion",
-    "T1068": "Privilege Escalation",
-    "T1070": "Defense Evasion",
-    "T1082": "Discovery",
-    "T1090": "Command and Control",
-    "T1105": "Command and Control",
-    "T1112": "Defense Evasion",
-    "T1115": "Collection",
-    "T1129": "Execution",
-    "T1134": "Privilege Escalation",
-    "T1486": "Impact",
-    "T1489": "Impact",
-    "T1497": "Defense Evasion",
-    "T1505": "Persistence",
-    "T1547": "Persistence",
-    "T1555": "Credential Access",
-    "T1562": "Defense Evasion",
-    "T1564": "Defense Evasion",
-    "T1573": "Command and Control",
+# Primary brand — deep teal/slate green (not neon)
+BRAND_PRIMARY       = colors.HexColor("#1A7F5A")   # Deep emerald
+BRAND_SECONDARY     = colors.HexColor("#134E3A")   # Forest dark
+BRAND_ACCENT        = colors.HexColor("#2DC08A")   # Muted mint (accent only)
+BRAND_LIGHT         = colors.HexColor("#E8F5EF")   # Very light mint tint
+
+# Surface / structural
+SURFACE_DARK        = colors.HexColor("#1C2B2B")   # Near-black teal (header/footer)
+SURFACE_MID         = colors.HexColor("#2D3E3E")   # Dark card bg
+SURFACE_LIGHT       = colors.HexColor("#F4F7F5")   # Off-white page bg
+SURFACE_WHITE       = colors.white
+SURFACE_RULE        = colors.HexColor("#D0DDD6")   # Subtle dividers
+
+# Typography
+TEXT_PRIMARY        = colors.HexColor("#1A2E2A")   # Near black, warm
+TEXT_SECONDARY      = colors.HexColor("#4A5E58")   # Mid grey-green
+TEXT_MUTED          = colors.HexColor("#8AA49B")   # Light muted
+TEXT_ON_DARK        = colors.white
+TEXT_ON_DARK_MUTED  = colors.HexColor("#A8C4BA")
+
+# Severity — professional, desaturated
+SEV_CRITICAL        = colors.HexColor("#C0392B")   # Deep red
+SEV_HIGH            = colors.HexColor("#C87941")   # Burnt orange
+SEV_MEDIUM          = colors.HexColor("#B8962E")   # Amber gold
+SEV_LOW             = colors.HexColor("#2E7D32")   # Deep green
+SEV_INFO            = colors.HexColor("#2563A8")   # Steel blue
+SEV_CLEAN           = colors.HexColor("#388E3C")   # Confident green
+SEV_UNKNOWN         = colors.HexColor("#78909C")   # Blue-grey
+
+# Severity tints (for row backgrounds)
+SEV_CRITICAL_BG     = colors.HexColor("#FDECEA")
+SEV_HIGH_BG         = colors.HexColor("#FDF3E7")
+SEV_MEDIUM_BG       = colors.HexColor("#FDF8E4")
+SEV_LOW_BG          = colors.HexColor("#E8F5E9")
+
+# Chart palette — distinct but harmonious
+CHART_PALETTE = [
+    colors.HexColor("#1A7F5A"),   # Primary green
+    colors.HexColor("#2563A8"),   # Steel blue
+    colors.HexColor("#C87941"),   # Burnt orange
+    colors.HexColor("#8E44AD"),   # Muted purple
+    colors.HexColor("#C0392B"),   # Deep red
+    colors.HexColor("#16A085"),   # Teal
+]
+
+PAGE_W, PAGE_H = A4
+MARGIN = 22 * mm
+CONTENT_W = PAGE_W - 2 * MARGIN
+
+SEVERITY_COLOUR_MAP = {
+    "CRITICAL":   SEV_CRITICAL,
+    "HIGH":       SEV_HIGH,
+    "MEDIUM":     SEV_MEDIUM,
+    "LOW":        SEV_LOW,
+    "INFO":       SEV_INFO,
+    "MALICIOUS":  SEV_CRITICAL,
+    "SUSPICIOUS": SEV_HIGH,
+    "CLEAN":      SEV_CLEAN,
+    "LOW RISK":   SEV_LOW,
+    "UNKNOWN":    SEV_UNKNOWN,
+}
+
+SEVERITY_BG_MAP = {
+    "CRITICAL":   SEV_CRITICAL_BG,
+    "HIGH":       SEV_HIGH_BG,
+    "MEDIUM":     SEV_MEDIUM_BG,
+    "LOW":        SEV_LOW_BG,
+    "LOW RISK":   SEV_LOW_BG,
+    "MALICIOUS":  SEV_CRITICAL_BG,
+    "SUSPICIOUS": SEV_HIGH_BG,
+    "CLEAN":      SEV_LOW_BG,
 }
 
 
-def _safe_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+def sev_color(text: str) -> colors.Color:
+    return SEVERITY_COLOUR_MAP.get(str(text).upper(), SEV_UNKNOWN)
 
 
-def _safe_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
+def sev_bg(text: str) -> colors.Color:
+    return SEVERITY_BG_MAP.get(str(text).upper(), SURFACE_LIGHT)
 
 
-def _clean_text(value: Any) -> str:
-    if isinstance(value, str):
-        text = value
-        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-        text = re.sub(r"__([^_]+)__", r"\1", text)
-        text = re.sub(r"`([^`]+)`", r"\1", text)
-        text = re.sub(r"\[(.*?)\]\((.*?)\)", r"\1", text)
-        return re.sub(r"\s+", " ", text).strip()
-    return ""
-
-
-def _split_numbered_items(text: str) -> list[str]:
-    if not text:
-        return []
-    normalized = _clean_text(text).replace("\r", "\n")
-    normalized = re.sub(r"\s+(\d+\.\s+)", r"\n\1", normalized)
-    parts = re.split(r"(?:^|\n)\s*\d+\.\s+", normalized)
-    if len(parts) > 1:
-        return [_clean_text(p) for p in parts if _clean_text(p)]
-    lines = [re.sub(r"^\s*[-*]\s*", "", line).strip() for line in normalized.split("\n")]
-    return [line for line in lines if line]
-
-
-def _extract_technique_ids(text: str) -> list[str]:
-    return sorted(set(re.findall(r"\bT\d{4}(?:\.\d{3})?\b", text or "")))
-
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN SERVICE CLASS
+# ─────────────────────────────────────────────────────────────────────────────
 
 class PDFReportService:
-    """Generate professional Sandbox + AI PDF reports (no Parse data)."""
+    """Professional Malware Analysis Report Generator — Industry Grade"""
 
-    def __init__(self) -> None:
-        self.styles = getSampleStyleSheet()
-        self.theme = {
-            "primary": colors.HexColor("#00FF88"),
-            "secondary": colors.HexColor("#0088FF"),
-            "accent": colors.HexColor("#FF0088"),
-            "teal": colors.HexColor("#00D4AA"),
-            "deep_blue": colors.HexColor("#0066CC"),
-            "warn": colors.HexColor("#F59E0B"),
-            "danger": colors.HexColor("#EF4444"),
-            "muted_bg": colors.HexColor("#F8FAFC"),
-            "panel_bg": colors.HexColor("#ECFFF5"),
-            "line": colors.HexColor("#D1D5DB"),
-            "text": colors.HexColor("#111827"),
+    def __init__(self, logo_path: Optional[str] = None):
+        self._init_styles()
+        self.logo_path = logo_path or self._find_logo()
+
+    # ── Logo ──────────────────────────────────────────────────────────────────
+
+    def _find_logo(self) -> Optional[str]:
+        for p in [
+            Path("app/static/logo.png"), Path("app/static/logo.svg"),
+            Path("static/logo.png"), Path("logo.png"),
+        ]:
+            if p.exists():
+                return str(p)
+        return None
+
+    # ── Styles ────────────────────────────────────────────────────────────────
+
+    def _init_styles(self):
+        self.styles = {
+            # Cover
+            "cover_report_type": self._ps("cover_report_type",
+                fontSize=9, fontName="Helvetica-Bold",
+                textColor=TEXT_ON_DARK_MUTED, alignment=TA_CENTER,
+                tracking=2, spaceAfter=4),
+            "cover_title": self._ps("cover_title",
+                fontSize=26, fontName="Helvetica-Bold",
+                textColor=TEXT_ON_DARK, alignment=TA_CENTER,
+                leading=32, spaceAfter=4),
+            "cover_family": self._ps("cover_family",
+                fontSize=14, fontName="Helvetica",
+                textColor=BRAND_ACCENT, alignment=TA_CENTER,
+                spaceAfter=2),
+            "cover_meta_key": self._ps("cover_meta_key",
+                fontSize=8, fontName="Helvetica-Bold",
+                textColor=TEXT_ON_DARK_MUTED),
+            "cover_meta_val": self._ps("cover_meta_val",
+                fontSize=8, fontName="Helvetica",
+                textColor=TEXT_ON_DARK),
+
+            # Section headers
+            "section_num": self._ps("section_num",
+                fontSize=8, fontName="Helvetica-Bold",
+                textColor=BRAND_ACCENT, spaceAfter=0),
+            "section_title": self._ps("section_title",
+                fontSize=13, fontName="Helvetica-Bold",
+                textColor=TEXT_ON_DARK, leading=16, spaceAfter=0),
+
+            # Body hierarchy
+            "h2": self._ps("h2",
+                fontSize=10.5, fontName="Helvetica-Bold",
+                textColor=BRAND_PRIMARY, spaceBefore=10,
+                spaceAfter=5, leading=14),
+            "h3": self._ps("h3",
+                fontSize=9.5, fontName="Helvetica-Bold",
+                textColor=TEXT_PRIMARY, spaceBefore=7,
+                spaceAfter=3, leading=13),
+            "body": self._ps("body",
+                fontSize=9, fontName="Helvetica",
+                textColor=TEXT_PRIMARY, leading=13.5,
+                spaceAfter=4, alignment=TA_JUSTIFY),
+            "body_small": self._ps("body_small",
+                fontSize=8.5, fontName="Helvetica",
+                textColor=TEXT_SECONDARY, leading=12,
+                spaceAfter=2),
+            "mono": self._ps("mono",
+                fontSize=7.5, fontName="Courier",
+                textColor=TEXT_PRIMARY, leading=11,
+                spaceAfter=1),
+            "label": self._ps("label",
+                fontSize=8, fontName="Helvetica-Bold",
+                textColor=TEXT_SECONDARY, spaceAfter=1),
+            "bullet": self._ps("bullet",
+                fontSize=9, fontName="Helvetica",
+                textColor=TEXT_PRIMARY, leading=13,
+                spaceAfter=3, leftIndent=12),
+            "toc_num": self._ps("toc_num",
+                fontSize=9.5, fontName="Helvetica-Bold",
+                textColor=BRAND_PRIMARY, leading=14),
+            "toc_title": self._ps("toc_title",
+                fontSize=9.5, fontName="Helvetica",
+                textColor=TEXT_PRIMARY, leading=14),
+            "caption": self._ps("caption",
+                fontSize=7.5, fontName="Helvetica",
+                textColor=TEXT_MUTED, alignment=TA_CENTER,
+                spaceAfter=4),
         }
-        workspace_root = Path(__file__).resolve().parents[3]
-        self.watermark_logo_path = workspace_root / "chameleon-frontend" / "public" / "text_wo_bg.png"
-        self.logo_candidates = [
-            workspace_root / "chameleon-frontend" / "public" / "Logo_wo_bg.png",
-            workspace_root / "chameleon-frontend" / "public" / "text_wo_bg.png",
-        ]
 
-        self.styles.add(
-            ParagraphStyle(
-                name="ChTitle",
-                parent=self.styles["Heading1"],
-                fontName="Helvetica-Bold",
-                fontSize=20,
-                textColor=colors.HexColor("#0B1F36"),
-                spaceAfter=8,
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChSubtitle",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica-Bold",
-                fontSize=10,
-                leading=13,
-                textColor=colors.HexColor("#0B1F36"),
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChHeading",
-                parent=self.styles["Heading2"],
-                fontName="Helvetica-Bold",
-                fontSize=13.4,
-                textColor=colors.HexColor("#0B1F36"),
-                spaceBefore=10,
-                spaceAfter=7,
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChBody",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica",
-                fontSize=9.6,
-                leading=13.8,
-                textColor=colors.HexColor("#1F2937"),
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChMuted",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica",
-                fontSize=8.6,
-                leading=11.8,
-                textColor=colors.HexColor("#4B5563"),
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChKpiLabel",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica-Bold",
-                fontSize=7.6,
-                leading=10,
-                textColor=colors.HexColor("#334155"),
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChKpiValue",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica-Bold",
-                fontSize=14,
-                leading=16,
-                textColor=colors.HexColor("#0F172A"),
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChTableHeader",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica-Bold",
-                fontSize=8.2,
-                leading=10.5,
-                textColor=colors.HexColor("#111827"),
-                wordWrap="CJK",
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChTableCell",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica",
-                fontSize=8.4,
-                leading=11.2,
-                textColor=colors.HexColor("#1F2937"),
-                wordWrap="CJK",
-            )
-        )
-        self.styles.add(
-            ParagraphStyle(
-                name="ChBullet",
-                parent=self.styles["BodyText"],
-                fontName="Helvetica",
-                fontSize=8.9,
-                leading=12.2,
-                leftIndent=10,
-                bulletIndent=2,
-                textColor=colors.HexColor("#1F2937"),
-            )
-        )
+    def _ps(self, name: str, **kwargs):
+        return ParagraphStyle(name, **kwargs)
+
+    # ── PDF Entry Point ───────────────────────────────────────────────────────
 
     def generate_pdf_report(
         self,
-        analysis: dict[str, Any],
-        cape_report: dict[str, Any] | None,
-        ai_report: dict[str, Any] | None,
+        complete_data: Dict[str, Any],
+        output_path: Optional[str] = None
     ) -> bytes:
-        buffer = BytesIO()
+        if output_path:
+            self._build_pdf(complete_data, output_path)
+            with open(output_path, "rb") as f:
+                return f.read()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            self._build_pdf(complete_data, tmp.name)
+            with open(tmp.name, "rb") as f:
+                return f.read()
+
+    def _build_pdf(self, data: Dict[str, Any], output_path: str):
+        analysis   = data.get("analysis", {})
+        analysis_id = analysis.get("analysis_id", "unknown")
+        filename   = analysis.get("filename", "Unknown File")
+
         doc = SimpleDocTemplate(
-            buffer,
+            output_path,
             pagesize=A4,
-            leftMargin=17 * mm,
-            rightMargin=17 * mm,
-            topMargin=18 * mm,
+            topMargin=24 * mm,
             bottomMargin=18 * mm,
-            title=f"Chameleon Analysis Report - {analysis.get('analysis_id', 'N/A')}",
-            author="Chameleon",
-            subject="Sandbox and AI malware analysis report",
+            leftMargin=MARGIN,
+            rightMargin=MARGIN,
+            title="Malware Analysis Report",
+            author="Chameleon Security Platform",
         )
 
-        cape_data = _safe_dict(cape_report.get("data") if cape_report else {})
-        ai_results = _safe_dict(ai_report.get("results") if ai_report else {})
-        ai_final = self._get_ai_final(ai_results)
+        def hf(canv, doc):
+            self._draw_header_footer(canv, doc, filename, analysis_id)
 
-        story: list[Any] = []
-        story.extend(self._build_cover(analysis, cape_data, ai_final, ai_report))
-        story.extend(self._build_compact_brief(analysis, cape_data, ai_results, ai_final))
-        story.extend(self._build_executive_summary(ai_final))
-        story.append(Spacer(1, 2.4 * mm))
-        story.extend(self._build_behavior_section(cape_data))
-        story.append(Spacer(1, 2.4 * mm))
-        story.extend(self._build_ai_section(ai_results, ai_final))
-        story.append(Spacer(1, 2.4 * mm))
-        story.extend(self._build_mitre_section(cape_data, ai_final))
-        story.append(Spacer(1, 2.4 * mm))
-        story.extend(self._build_threat_intel_and_iocs(cape_data, ai_final))
-        story.extend(self._build_mitigation_section(ai_final))
+        story = []
+        story.extend(self._build_cover(data))
+        story.extend(self._build_toc(data))
+        story.extend(self._build_executive_summary(data))
+        story.extend(self._build_threat_score_dashboard(data))
+        story.extend(self._build_analysis_overview(data))
+        story.extend(self._build_file_analysis(data))
+        story.extend(self._build_cape_findings(data))
+        story.extend(self._build_signatures(data))
+        story.extend(self._build_behavioral(data))
+        story.extend(self._build_memory(data))
+        story.extend(self._build_network(data))
+        story.extend(self._build_threat_intel(data))
+        story.extend(self._build_mitre(data))
+        story.extend(self._build_iocs(data))
+        story.extend(self._build_incident_response(data))
 
-        generated_at = datetime.now(timezone.utc)
+        doc.build(story, onFirstPage=hf, onLaterPages=hf)
 
-        def on_page(canvas, _: Any) -> None:
-            canvas.saveState()
+    # ── Header / Footer ───────────────────────────────────────────────────────
 
-            # Light watermark using text-based brand logo.
-            if self.watermark_logo_path.exists():
-                try:
-                    if hasattr(canvas, "setFillAlpha"):
-                        canvas.setFillAlpha(0.07)
-                    wm_width = 96 * mm
-                    wm_height = 20 * mm
-                    canvas.drawImage(
-                        str(self.watermark_logo_path),
-                        (A4[0] - wm_width) / 2,
-                        (A4[1] - wm_height) / 2,
-                        width=wm_width,
-                        height=wm_height,
-                        preserveAspectRatio=True,
-                        mask="auto",
-                    )
-                    if hasattr(canvas, "setFillAlpha"):
-                        canvas.setFillAlpha(1)
-                except Exception:
-                    pass
+    def _draw_header_footer(self, canv: canvas.Canvas, doc, filename: str, analysis_id: str):
+        canv.saveState()
+        w, h = A4
 
-            # Premium frame and top accent lines.
-            frame_x = 11 * mm
-            frame_y = 14 * mm
-            frame_w = A4[0] - (22 * mm)
-            frame_h = A4[1] - (28 * mm)
-            canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
-            canvas.setLineWidth(0.65)
-            canvas.roundRect(frame_x, frame_y, frame_w, frame_h, 2.6 * mm, fill=0, stroke=1)
+        # ── Header ──
+        # Dark background bar
+        canv.setFillColor(SURFACE_DARK)
+        canv.rect(0, h - 20 * mm, w, 20 * mm, fill=1, stroke=0)
 
-            canvas.setStrokeColor(colors.HexColor("#0EA5A4"))
-            canvas.setLineWidth(1.2)
-            canvas.line(16 * mm, A4[1] - 14 * mm, A4[0] - 16 * mm, A4[1] - 14 * mm)
-            canvas.setStrokeColor(colors.HexColor("#93C5FD"))
-            canvas.setLineWidth(0.45)
-            canvas.line(16 * mm, A4[1] - 15.5 * mm, A4[0] - 16 * mm, A4[1] - 15.5 * mm)
+        # Thin brand accent line at bottom of header
+        canv.setFillColor(BRAND_PRIMARY)
+        canv.rect(0, h - 20 * mm, w, 1.2 * mm, fill=1, stroke=0)
 
-            # Header metadata.
-            canvas.setFillColor(colors.HexColor("#0F172A"))
-            canvas.setFont("Helvetica-Bold", 8.2)
-            canvas.drawString(16 * mm, A4[1] - 11.5 * mm, "CHAMELEON INTELLIGENCE REPORT")
-            canvas.setFillColor(colors.HexColor("#475569"))
-            canvas.setFont("Helvetica", 7.3)
-            canvas.drawRightString(
-                A4[0] - 16 * mm,
-                A4[1] - 11.5 * mm,
-                f"ID: {str(analysis.get('analysis_id', 'N/A'))[:36]}",
-            )
+        # Brand name (left)
+        canv.setFillColor(TEXT_ON_DARK)
+        canv.setFont("Helvetica-Bold", 9)
+        canv.drawString(MARGIN, h - 13 * mm, "CHAMELEON SECURITY")
 
-            # Footer metadata.
-            canvas.setStrokeColor(colors.HexColor("#CBD5E1"))
-            canvas.setLineWidth(0.5)
-            canvas.line(16 * mm, 14 * mm, A4[0] - 16 * mm, 14 * mm)
-            canvas.setFillColor(colors.HexColor("#475569"))
-            canvas.setFont("Helvetica", 7.5)
-            canvas.drawString(16 * mm, 10.4 * mm, f"Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%SZ')}")
-            canvas.drawRightString(
-                A4[0] - 16 * mm,
-                10.4 * mm,
-                f"Page {canvas.getPageNumber()}",
-            )
-            canvas.restoreState()
+        # Separator dot
+        canv.setFillColor(BRAND_ACCENT)
+        canv.circle(MARGIN + 115, h - 12.5 * mm, 1.2, fill=1, stroke=0)
 
-        doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
-        return buffer.getvalue()
+        # Report type (right of dot)
+        canv.setFillColor(TEXT_ON_DARK_MUTED)
+        canv.setFont("Helvetica", 8)
+        canv.drawString(MARGIN + 122, h - 13 * mm, "Malware Analysis Report")
 
-    def _build_cover(
+        # Filename (far right, truncated)
+        short_name = filename[:55] + "…" if len(filename) > 55 else filename
+        canv.setFont("Helvetica", 7.5)
+        canv.setFillColor(TEXT_ON_DARK_MUTED)
+        canv.drawRightString(w - MARGIN, h - 13 * mm, short_name)
+
+        # ── Footer ──
+        # Thin rule
+        canv.setStrokeColor(SURFACE_RULE)
+        canv.setLineWidth(0.5)
+        canv.line(MARGIN, 14 * mm, w - MARGIN, 14 * mm)
+
+        canv.setFont("Helvetica", 7)
+        canv.setFillColor(TEXT_MUTED)
+        canv.drawString(MARGIN, 9 * mm, f"Analysis ID: {analysis_id}")
+        canv.drawCentredString(w / 2, 9 * mm, f"Page {doc.page}")
+        canv.drawRightString(w - MARGIN, 9 * mm, "CONFIDENTIAL  ·  INTERNAL USE ONLY")
+
+        canv.restoreState()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # VISUALIZATIONS (Professional Charts)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _threat_gauge_drawing(self, score: float, width: float = 320, height: float = 70) -> Drawing:
+        """
+        Professional horizontal threat gauge.
+        Segmented track: Clean | Suspicious | Malicious
+        with a triangular pointer at the score position.
+        """
+        d = Drawing(width, height)
+        pad_l, pad_r = 30, 30
+        bar_y = 28
+        bar_h = 14
+        track_w = width - pad_l - pad_r
+
+        score = max(0.0, min(10.0, float(score)))
+
+        # Background track (three segments)
+        segments = [
+            (0,   4,  SEV_LOW_BG,          SEV_LOW),
+            (4,   7,  SEV_MEDIUM_BG,        SEV_MEDIUM),
+            (7,  10,  SEV_CRITICAL_BG,      SEV_CRITICAL),
+        ]
+        for s_min, s_max, bg, _border in segments:
+            x0 = pad_l + (s_min / 10) * track_w
+            x1 = pad_l + (s_max / 10) * track_w
+            d.add(Rect(x0, bar_y, x1 - x0, bar_h,
+                       fillColor=bg, strokeColor=SURFACE_RULE, strokeWidth=0.5))
+
+        # Filled portion up to score
+        fill_w = (score / 10) * track_w
+        if score < 4:
+            fill_col = SEV_LOW
+        elif score < 7:
+            fill_col = SEV_MEDIUM
+        else:
+            fill_col = SEV_CRITICAL
+
+        d.add(Rect(pad_l, bar_y, fill_w, bar_h,
+                   fillColor=fill_col, strokeColor=None, strokeWidth=0))
+
+        # Score pointer line
+        px = pad_l + fill_w
+        d.add(Line(px, bar_y - 4, px, bar_y + bar_h + 4,
+                   strokeColor=TEXT_PRIMARY, strokeWidth=1.5))
+
+        # Score label above pointer
+        d.add(String(px, bar_y + bar_h + 7,
+                     f"{score:.1f}",
+                     fontSize=9, fontName="Helvetica-Bold",
+                     fillColor=TEXT_PRIMARY, textAnchor="middle"))
+
+        # Segment labels below
+        label_y = bar_y - 10
+        d.add(String(pad_l + (2 / 10) * track_w, label_y, "Clean",
+                     fontSize=7, fillColor=TEXT_MUTED, textAnchor="middle"))
+        d.add(String(pad_l + (5.5 / 10) * track_w, label_y, "Suspicious",
+                     fontSize=7, fillColor=TEXT_MUTED, textAnchor="middle"))
+        d.add(String(pad_l + (8.5 / 10) * track_w, label_y, "Malicious",
+                     fontSize=7, fillColor=TEXT_MUTED, textAnchor="middle"))
+
+        # Scale markers
+        for i in range(11):
+            mx = pad_l + (i / 10) * track_w
+            d.add(Line(mx, bar_y - 1, mx, bar_y,
+                       strokeColor=SURFACE_RULE, strokeWidth=0.5))
+            if i % 2 == 0:
+                d.add(String(mx, bar_y - 8, str(i),
+                             fontSize=6, fillColor=TEXT_MUTED, textAnchor="middle"))
+
+        # "/ 10" label (far right)
+        d.add(String(pad_l + track_w + 6, bar_y + 4, "/ 10",
+                     fontSize=7, fillColor=TEXT_MUTED))
+
+        return d
+
+    def _horizontal_bar_chart(
         self,
-        analysis: dict[str, Any],
-        cape_data: dict[str, Any],
-        ai_final: dict[str, Any],
-        ai_report: dict[str, Any] | None,
-    ) -> list[Any]:
-        logo = self._build_logo_flowable()
-        info = _safe_dict(cape_data.get("info"))
-        target_file = _safe_dict(_safe_dict(cape_data.get("target")).get("file"))
-        confidence = ai_final.get("threat_confidence_score")
-        confidence_score = float(confidence) if isinstance(confidence, (int, float)) else 0.0
-        sandbox_score = float(cape_data.get("malscore", 0) or 0)
-        processes_count = len(_safe_list(_safe_dict(cape_data.get("behavior")).get("processes")))
-        ioc_map = self._extract_iocs(
-            cape_data, _safe_dict(_safe_dict(cape_data.get("behavior")).get("summary"))
-        )
-        ioc_count = sum(len(v) for v in ioc_map.values())
+        labels: List[str],
+        values: List[float],
+        width: float = CONTENT_W,
+        height: float = 120,
+        max_val: float = None,
+        colors_list: List = None,
+    ) -> Drawing:
+        """
+        Clean horizontal bar chart — best for named categories.
+        """
+        if not labels or not values:
+            return Drawing(width, height)
 
+        max_val = max_val or (max(values) * 1.15 if values else 10)
+        colors_list = colors_list or [BRAND_PRIMARY] * len(labels)
+
+        pad_l = 90
+        pad_r = 30
+        pad_t = 10
+        pad_b = 20
+        bar_area_w = width - pad_l - pad_r
+        bar_area_h = height - pad_t - pad_b
+        n = len(labels)
+        row_h = bar_area_h / n
+        bar_thick = row_h * 0.45
+
+        d = Drawing(width, height)
+
+        # Background gridlines (vertical)
+        grid_steps = 5
+        for i in range(grid_steps + 1):
+            gx = pad_l + (i / grid_steps) * bar_area_w
+            d.add(Line(gx, pad_b, gx, pad_b + bar_area_h,
+                       strokeColor=SURFACE_RULE, strokeWidth=0.4))
+            # Axis value label
+            val_label = f"{int((i / grid_steps) * max_val)}"
+            d.add(String(gx, pad_b - 10, val_label,
+                         fontSize=6, fillColor=TEXT_MUTED, textAnchor="middle"))
+
+        # Bars
+        for idx, (lbl, val) in enumerate(zip(labels, values)):
+            y_center = pad_b + bar_area_h - (idx + 0.5) * row_h
+            bar_w = (val / max_val) * bar_area_w if max_val else 0
+            col = colors_list[idx % len(colors_list)]
+
+            # Bar background (full width, very light)
+            d.add(Rect(pad_l, y_center - bar_thick / 2,
+                       bar_area_w, bar_thick,
+                       fillColor=SURFACE_LIGHT, strokeColor=None))
+
+            # Actual bar
+            if bar_w > 0:
+                d.add(Rect(pad_l, y_center - bar_thick / 2,
+                           bar_w, bar_thick,
+                           fillColor=col, strokeColor=None))
+
+            # Value label inside bar (or just outside if bar too short)
+            val_x = pad_l + bar_w + 4
+            d.add(String(val_x, y_center - 3, str(int(val)),
+                         fontSize=7, fontName="Helvetica-Bold",
+                         fillColor=TEXT_SECONDARY))
+
+            # Category label (left)
+            short_lbl = lbl[:12] if len(lbl) > 12 else lbl
+            d.add(String(pad_l - 4, y_center - 3, short_lbl,
+                         fontSize=7.5, fillColor=TEXT_PRIMARY,
+                         textAnchor="end"))
+
+        return d
+
+    def _donut_chart(
+        self,
+        data: List[int],
+        labels: List[str],
+        colors_list: List,
+        width: float = 200,
+        height: float = 160,
+    ) -> Drawing:
+        """
+        Professional donut/pie chart with clean external legend.
+        """
+        total = sum(data)
+        if total == 0:
+            return Drawing(width, height)
+
+        d = Drawing(width, height)
+
+        cx = width * 0.42
+        cy = height / 2
+        r_outer = min(cx, cy) * 0.78
+        r_inner = r_outer * 0.52   # donut hole
+
+        # Sort by value descending for visual clarity
+        combined = sorted(zip(data, labels, colors_list), reverse=True)
+        data_s, labels_s, colors_s = zip(*combined)
+
+        # Draw donut slices manually using Pie + white circle overlay
+        pie = Pie()
+        pie.x = cx - r_outer
+        pie.y = cy - r_outer
+        pie.width = r_outer * 2
+        pie.height = r_outer * 2
+        pie.data = list(data_s)
+        pie.labels = None
+        pie.slices.strokeWidth = 1.5
+        pie.slices.strokeColor = SURFACE_WHITE
+        for i, col in enumerate(colors_s):
+            pie.slices[i].fillColor = col
+            pie.slices[i].strokeColor = SURFACE_WHITE
+        d.add(pie)
+
+        # White circle for donut hole
+        d.add(Circle(cx, cy, r_inner,
+                     fillColor=SURFACE_WHITE, strokeColor=SURFACE_WHITE, strokeWidth=0))
+
+        # Total label in centre
+        d.add(String(cx, cy + 5, str(total),
+                     fontSize=13, fontName="Helvetica-Bold",
+                     fillColor=TEXT_PRIMARY, textAnchor="middle"))
+        d.add(String(cx, cy - 8, "Total",
+                     fontSize=7, fillColor=TEXT_MUTED, textAnchor="middle"))
+
+        # Legend (right side)
+        leg_x = cx + r_outer + 8
+        leg_y_start = cy + (len(data_s) * 13) / 2
+        for i, (lbl, col, val) in enumerate(zip(labels_s, colors_s, data_s)):
+            pct = val / total * 100
+            ly = leg_y_start - i * 16
+            d.add(Rect(leg_x, ly - 4, 8, 8, fillColor=col, strokeColor=None))
+            d.add(String(leg_x + 11, ly - 3,
+                         f"{lbl[:14]}  {val} ({pct:.0f}%)",
+                         fontSize=7, fillColor=TEXT_SECONDARY))
+
+        return d
+
+    def _vertical_bar_chart(
+        self,
+        categories: List[str],
+        values: List[float],
+        width: float = CONTENT_W,
+        height: float = 130,
+        color: colors.Color = BRAND_PRIMARY,
+    ) -> Drawing:
+        """Clean vertical bar chart with value labels on top."""
+        if not categories or not values:
+            return Drawing(width, height)
+
+        max_val = max(values) * 1.2 if values else 10
+        pad_l, pad_r, pad_t, pad_b = 30, 20, 25, 30
+        bar_area_w = width - pad_l - pad_r
+        bar_area_h = height - pad_t - pad_b
+        n = len(categories)
+        col_w = bar_area_w / n
+        bar_w = col_w * 0.55
+
+        d = Drawing(width, height)
+
+        # Horizontal gridlines
+        for i in range(5):
+            gy = pad_b + (i / 4) * bar_area_h
+            d.add(Line(pad_l, gy, pad_l + bar_area_w, gy,
+                       strokeColor=SURFACE_RULE, strokeWidth=0.4))
+
+        # Axes
+        d.add(Line(pad_l, pad_b, pad_l, pad_b + bar_area_h,
+                   strokeColor=SURFACE_RULE, strokeWidth=0.8))
+        d.add(Line(pad_l, pad_b, pad_l + bar_area_w, pad_b,
+                   strokeColor=SURFACE_RULE, strokeWidth=0.8))
+
+        # Bars
+        for idx, (cat, val) in enumerate(zip(categories, values)):
+            bar_x = pad_l + idx * col_w + (col_w - bar_w) / 2
+            bar_h_px = (val / max_val) * bar_area_h if max_val else 0
+
+            if bar_h_px > 0:
+                d.add(Rect(bar_x, pad_b, bar_w, bar_h_px,
+                           fillColor=color, strokeColor=None))
+
+            # Value on top
+            d.add(String(bar_x + bar_w / 2, pad_b + bar_h_px + 3,
+                         f"{int(val)}",
+                         fontSize=7, fontName="Helvetica-Bold",
+                         fillColor=TEXT_SECONDARY, textAnchor="middle"))
+
+            # Category label below axis
+            short = cat[:9] if len(cat) > 9 else cat
+            d.add(String(bar_x + bar_w / 2, pad_b - 12, short,
+                         fontSize=7, fillColor=TEXT_MUTED, textAnchor="middle"))
+
+        return d
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # UI PRIMITIVES
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _section_header(self, num: str, title: str) -> list:
+        """Dark full-width section header bar with number and title."""
+        w = CONTENT_W
+        inner = Table([[
+            Paragraph(num,   self.styles["section_num"]),
+            Paragraph(title, self.styles["section_title"]),
+        ]], colWidths=[w * 0.06, w * 0.94])
+        inner.setStyle(TableStyle([
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        outer = Table([[inner]], colWidths=[w])
+        outer.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), SURFACE_DARK),
+            ("TOPPADDING",    (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+            ("LINEBELOW",     (0, 0), (-1, -1), 2, BRAND_PRIMARY),
+        ]))
+        return [Spacer(1, 10), outer, Spacer(1, 8)]
+
+    def _kv_table(self, rows: list, col_ratio=(0.30, 0.70)) -> Table:
+        """Refined two-column key-value table with alternating rows."""
+        cw = [CONTENT_W * col_ratio[0], CONTENT_W * col_ratio[1]]
+        data = []
+        for k, v in rows:
+            kp = Paragraph(str(k), self.styles["label"])
+            if isinstance(v, list):
+                text = "\n".join(f"• {i}" for i in v) if v else "—"
+                vp = Paragraph(text, self.styles["body_small"])
+            else:
+                vp = Paragraph(str(v) if v not in (None, "", []) else "—",
+                               self.styles["body_small"])
+            data.append([kp, vp])
+
+        tbl = Table(data, colWidths=cw)
+        tbl.setStyle(TableStyle([
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [SURFACE_WHITE, SURFACE_LIGHT]),
+            ("LINEBELOW",      (0, 0), (-1, -1), 0.3, SURFACE_RULE),
+            ("LINEBEFORE",     (1, 0), (1, -1), 1, BRAND_PRIMARY),
+            ("TOPPADDING",     (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",    (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",   (0, 0), (-1, -1), 8),
+            ("VALIGN",         (0, 0), (-1, -1), "TOP"),
+        ]))
+        return tbl
+
+    def _severity_row(self, label: str, value: str) -> Table:
+        """Single-row verdict display with colour-coded value cell."""
+        col    = sev_color(value)
+        bg     = sev_bg(value)
+        cw     = [CONTENT_W * 0.30, CONTENT_W * 0.70]
+        badge  = ParagraphStyle("_badge", fontSize=9, fontName="Helvetica-Bold",
+                                textColor=SURFACE_WHITE, alignment=TA_CENTER)
+        tbl = Table([[Paragraph(label, self.styles["label"]),
+                      Paragraph(value, badge)]], colWidths=cw)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (0, 0), SURFACE_LIGHT),
+            ("BACKGROUND",    (1, 0), (1, 0), col),
+            ("LINEBELOW",     (0, 0), (-1, -1), 0.3, SURFACE_RULE),
+            ("LINEBEFORE",    (1, 0), (1, 0), 1, col),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        return tbl
+
+    def _callout(self, text: str, level: str = "info") -> Table:
+        """Coloured left-border callout box."""
+        col_map = {
+            "info":     BRAND_PRIMARY,
+            "warning":  SEV_HIGH,
+            "critical": SEV_CRITICAL,
+            "success":  SEV_CLEAN,
+        }
+        border_col = col_map.get(level, BRAND_PRIMARY)
+        bg_col = {
+            "info":     BRAND_LIGHT,
+            "warning":  SEV_HIGH_BG,
+            "critical": SEV_CRITICAL_BG,
+            "success":  SEV_LOW_BG,
+        }.get(level, BRAND_LIGHT)
+
+        tbl = Table([[Paragraph(text, self.styles["body"])]], colWidths=[CONTENT_W])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), bg_col),
+            ("LINEBEFORE",    (0, 0), (0, -1), 3, border_col),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+            ("TOPPADDING",    (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+        return tbl
+
+    def _stat_cards(self, stats: List[tuple]) -> Table:
+        """
+        Horizontal row of stat cards: [(label, value, sub), ...]
+        Up to 4 cards per row.
+        """
+        n = min(len(stats), 4)
+        cw = CONTENT_W / n
+        row = []
+        for lbl, val, sub in stats[:n]:
+            cell = Table([[
+                Paragraph(str(val),
+                          ParagraphStyle("_sv", fontSize=18, fontName="Helvetica-Bold",
+                                         textColor=BRAND_PRIMARY, alignment=TA_CENTER)),
+                ], [
+                Paragraph(lbl,
+                          ParagraphStyle("_sl", fontSize=7.5, fontName="Helvetica-Bold",
+                                         textColor=TEXT_SECONDARY, alignment=TA_CENTER)),
+                ], [
+                Paragraph(sub or " ",
+                          ParagraphStyle("_ss", fontSize=7, fontName="Helvetica",
+                                         textColor=TEXT_MUTED, alignment=TA_CENTER)),
+            ]], colWidths=[cw - 10])
+            cell.setStyle(TableStyle([
+                ("TOPPADDING",    (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ]))
+            row.append(cell)
+
+        outer = Table([row], colWidths=[cw] * n)
+        outer.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), SURFACE_WHITE),
+            ("LINEBELOW",     (0, 0), (-1, -1), 2, BRAND_PRIMARY),
+            ("LINEBEFORE",    (1, 0), (-1, -1), 0.5, SURFACE_RULE),
+            ("TOPPADDING",    (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("BOX",           (0, 0), (-1, -1), 0.5, SURFACE_RULE),
+        ]))
+        return outer
+
+    def _bullet_list(self, items: list, max_items: int = None) -> list:
+        if not items:
+            return [Paragraph("None identified.", self.styles["body_small"])]
+        display = items[:max_items] if max_items else items
+        elems = [Paragraph(f"· {i}", self.styles["bullet"]) for i in display]
+        if max_items and len(items) > max_items:
+            elems.append(Paragraph(f"  … and {len(items) - max_items} more entries",
+                                   self.styles["body_small"]))
+        return elems
+
+    def _mono_list(self, items: list, max_items: int = 50) -> list:
+        if not items:
+            return [Paragraph("—", self.styles["mono"])]
+        display = items[:max_items]
+        elems = [Paragraph(str(i), self.styles["mono"]) for i in display]
+        if len(items) > max_items:
+            elems.append(Paragraph(f"… +{len(items) - max_items} entries truncated",
+                                   self.styles["body_small"]))
+        return elems
+
+    def _divider(self) -> HRFlowable:
+        return HRFlowable(width="100%", thickness=0.5, color=SURFACE_RULE,
+                          spaceAfter=6, spaceBefore=4)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # DATA HELPERS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _fmt_ts(self, ts) -> str:
+        if not ts:
+            return "—"
+        try:
+            if isinstance(ts, datetime):
+                return ts.strftime("%Y-%m-%d  %H:%M:%S UTC")
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d  %H:%M:%S UTC")
+        except Exception:
+            return str(ts)[:19]
+
+    def _get_family(self, data: Dict) -> str:
+        ai = data.get("ai_analysis", {}).get("results", {})
+        for key in ("final_synthesis", "initial_combined_analysis"):
+            fam = (ai.get(key, {}).get("analysis", {})
+                     .get("executive_summary", {}).get("malware_family"))
+            if fam:
+                return fam
+        return "Unknown"
+
+    def _get_verdict(self, data: Dict) -> str:
+        ai  = data.get("ai_analysis", {}).get("results", {})
+        v   = (ai.get("final_synthesis", {}).get("analysis", {})
+                 .get("executive_summary", {}).get("final_verdict", ""))
+        if v:
+            return v.upper()
+        ms = data.get("analysis", {}).get("malscore", 0)
+        if isinstance(ms, (int, float)):
+            if ms >= 7:   return "MALICIOUS"
+            if ms >= 4:   return "SUSPICIOUS"
+            return "LOW RISK"
+        return "UNKNOWN"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # COVER PAGE
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_cover(self, data: Dict) -> list:
+        analysis   = data.get("analysis", {})
+        ti         = analysis.get("threat_intel", {})
+        sha256     = ti.get("hash_queried", "—")
+        filename   = analysis.get("filename", "—")
+        analysis_id = analysis.get("analysis_id", "—")
+        malscore   = analysis.get("malscore", 0)
+        date       = self._fmt_ts(analysis.get("completed_at") or analysis.get("created_at", ""))
+        family     = self._get_family(data)
+        verdict    = self._get_verdict(data)
+        col        = sev_color(verdict)
+
+        w = CONTENT_W
+
+        # Styles
+        st_report = ParagraphStyle("_cv_rpt",
+            fontSize=8, fontName="Helvetica-Bold", textColor=TEXT_ON_DARK_MUTED,
+            alignment=TA_CENTER, spaceAfter=0)
+        st_title = ParagraphStyle("_cv_ttl",
+            fontSize=24, fontName="Helvetica-Bold", textColor=TEXT_ON_DARK,
+            alignment=TA_CENTER, leading=30, spaceAfter=0)
+        st_family = ParagraphStyle("_cv_fam",
+            fontSize=13, fontName="Helvetica", textColor=BRAND_ACCENT,
+            alignment=TA_CENTER, spaceAfter=0)
+        st_verdict = ParagraphStyle("_cv_ver",
+            fontSize=11, fontName="Helvetica-Bold", textColor=SURFACE_WHITE,
+            alignment=TA_CENTER)
+        st_mk = ParagraphStyle("_cv_mk",
+            fontSize=8, fontName="Helvetica-Bold", textColor=TEXT_ON_DARK_MUTED)
+        st_mv = ParagraphStyle("_cv_mv",
+            fontSize=8, fontName="Helvetica", textColor=TEXT_ON_DARK)
+        st_conf = ParagraphStyle("_cv_conf",
+            fontSize=7.5, fontName="Helvetica", textColor=TEXT_MUTED,
+            alignment=TA_CENTER)
+
+        # Verdict badge
+        verdict_tbl = Table([[Paragraph(verdict, st_verdict)]], colWidths=[w * 0.32])
+        verdict_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), col),
+            ("TOPPADDING",    (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ]))
+
+        # Metadata block
         meta_rows = [
-            ["Analysis ID", analysis.get("analysis_id", "N/A")],
-            ["Filename", analysis.get("filename", "Unknown")],
-            ["SHA256", target_file.get("sha256", "N/A")],
-            ["SHA1", target_file.get("sha1", "N/A")],
-            ["MD5", target_file.get("md5", "N/A")],
-            ["Sandbox Verdict", cape_data.get("malstatus", "Unknown")],
-            ["AI Threat Level", ai_final.get("overall_threat_level", "Unknown")],
-            [
-                "AI Confidence",
-                f"{confidence}%" if isinstance(confidence, (int, float)) else "Not available",
-            ],
-            ["Runtime (sec)", str(info.get("duration", "N/A"))],
-            ["AI Sections", str(len(_safe_list((ai_report or {}).get("sections_analyzed"))))],
+            ("SHA-256",     (str(sha256)[:60] + "…") if len(str(sha256)) > 60 else str(sha256)),
+            ("File Name",   filename),
+            ("Analysis ID", analysis_id),
+            ("Malscore",    f"{malscore} / 10" if malscore else "—"),
+            ("Date",        date),
+        ]
+        meta_data = [[Paragraph(k, st_mk), Paragraph(v, st_mv)] for k, v in meta_rows]
+        meta_tbl  = Table(meta_data, colWidths=[w * 0.22, w * 0.78])
+        meta_tbl.setStyle(TableStyle([
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [SURFACE_DARK, SURFACE_MID]),
+            ("LINEBELOW",      (0, 0), (-1, -2), 0.3, colors.HexColor("#3a5050")),
+            ("TOPPADDING",     (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",    (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING",   (0, 0), (-1, -1), 10),
+        ]))
+
+        # Gauge
+        gauge = self._threat_gauge_drawing(
+            float(malscore) if malscore else 0, width=w * 0.72, height=65)
+
+        # Wrap gauge centrally
+        gauge_tbl = Table([[gauge]], colWidths=[w])
+        gauge_tbl.setStyle(TableStyle([
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        # Thin accent divider
+        accent_line = Table([[""]], colWidths=[w])
+        accent_line.setStyle(TableStyle([
+            ("LINEBELOW",     (0, 0), (-1, -1), 2, BRAND_PRIMARY),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        # Assemble cover
+        cover_rows = [
+            [Spacer(1, 16)],
+            [Paragraph("CHAMELEON SECURITY", ParagraphStyle("_cs",
+                fontSize=11, fontName="Helvetica-Bold", textColor=BRAND_ACCENT,
+                alignment=TA_CENTER, tracking=3))],
+            [Spacer(1, 2)],
+            [Paragraph("MALWARE ANALYSIS REPORT", st_title)],
+            [Spacer(1, 4)],
+            [Paragraph(family, st_family)],
+            [Spacer(1, 14)],
+            [gauge_tbl],
+            [Spacer(1, 12)],
+            [Table([[verdict_tbl]], colWidths=[w])  # centre the badge
+             if True else verdict_tbl],
+            [Spacer(1, 18)],
+            [accent_line],
+            [Spacer(1, 2)],
+            [meta_tbl],
+            [Spacer(1, 18)],
+            [Paragraph("CONFIDENTIAL  ·  FOR INTERNAL USE ONLY  ·  DO NOT DISTRIBUTE",
+                       st_conf)],
+            [Spacer(1, 16)],
         ]
 
-        meta_table = Table(self._as_table_data(meta_rows), colWidths=[45 * mm, 120 * mm])
-        meta_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D8EEE8")),
-                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1F2937")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#C7D2D0")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FBFA")]),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
+        # Centre verdict badge properly
+        cover_rows[9] = [Table([[verdict_tbl]], colWidths=[w],
+                                hAlign="CENTER")]
+        cover_rows[9][0].setStyle(TableStyle([
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
 
-        kpi_cards = Table(
-            [
-                [
-                    self._kpi_cell("SANDBOX SCORE", f"{sandbox_score:.1f}/10"),
-                    self._kpi_cell("AI CONFIDENCE", f"{confidence_score:.0f}%"),
-                    self._kpi_cell("PROCESSES", str(processes_count)),
-                    self._kpi_cell("IP IOCs", str(ioc_count)),
-                ]
-            ],
-            colWidths=[40 * mm, 40 * mm, 40 * mm, 40 * mm],
+        cover_tbl = Table(cover_rows, colWidths=[w])
+        cover_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), SURFACE_DARK),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        return [cover_tbl, PageBreak()]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TABLE OF CONTENTS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_toc(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("", "TABLE OF CONTENTS"))
+
+        sections = [
+            ("1",  "Executive Summary"),
+            ("2",  "Threat Assessment Dashboard"),
+            ("3",  "Analysis Overview"),
+            ("4",  "File / Target Analysis"),
+            ("5",  "CAPE Sandbox Findings"),
+            ("6",  "Signatures Analysis"),
+            ("7",  "Behavioral Analysis"),
+            ("8",  "Memory Analysis"),
+            ("9",  "Network Analysis"),
+            ("10", "Threat Intelligence"),
+            ("11", "MITRE ATT&CK Mapping"),
+            ("12", "Indicators of Compromise (IOCs)"),
+            ("13", "Incident Response Guidance"),
+        ]
+
+        w = CONTENT_W
+        for i, (num, title) in enumerate(sections):
+            row_bg = SURFACE_WHITE if i % 2 == 0 else SURFACE_LIGHT
+            row = Table(
+                [[Paragraph(num, self.styles["toc_num"]),
+                  Paragraph(title, self.styles["toc_title"]),
+                  Paragraph("· · · · · · · · · · · · · · · · · · · ·",
+                            ParagraphStyle("_dots", fontSize=7, textColor=TEXT_MUTED,
+                                           alignment=TA_CENTER)),
+                ]],
+                colWidths=[w * 0.06, w * 0.60, w * 0.34])
+            row.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), row_bg),
+                ("LINEBELOW",     (0, 0), (-1, -1), 0.3, SURFACE_RULE),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+            elems.append(row)
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 1 — EXECUTIVE SUMMARY
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_executive_summary(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("1", "EXECUTIVE SUMMARY"))
+
+        ai          = data.get("ai_analysis", {}).get("results", {})
+        fs          = ai.get("final_synthesis", {}).get("analysis", {})
+        ica         = ai.get("initial_combined_analysis", {}).get("analysis", {})
+        analysis_meta = data.get("analysis", {})
+
+        one_liner = (fs.get("executive_summary", {}).get("one_liner")
+                     or ica.get("executive_summary", {}).get("one_liner", "—"))
+
+        elems.append(Paragraph("Key Finding", self.styles["h2"]))
+        elems.append(self._callout(one_liner, level="warning"))
+        elems.append(Spacer(1, 6))
+
+        summary_para = (fs.get("executive_summary", {}).get("summary_paragraph")
+                        or ica.get("executive_summary", {}).get("summary_paragraph", ""))
+        if summary_para:
+            elems.append(Paragraph("Analytical Summary", self.styles["h2"]))
+            elems.append(Paragraph(summary_para, self.styles["body"]))
+            elems.append(Spacer(1, 6))
+
+        verdict    = self._get_verdict(data)
+        family     = self._get_family(data)
+        malscore   = analysis_meta.get("malscore", "—")
+        confidence = (fs.get("executive_summary", {}).get("confidence_score")
+                      or ica.get("confidence", "—"))
+
+        elems.append(Paragraph("Verdict at a Glance", self.styles["h2"]))
+        elems.append(self._severity_row("Verdict", verdict))
+        elems.append(self._kv_table([
+            ("Malware Family",     family),
+            ("Malscore",           f"{malscore} / 10" if malscore != "—" else "—"),
+            ("Analysis Confidence", f"{confidence}/10" if isinstance(confidence, (int, float))
+                                    else str(confidence)),
+        ]))
+
+        ti = analysis_meta.get("threat_intel", {})
+        if ti:
+            elems.append(self._kv_table([
+                ("Threat Intelligence", ti.get("summary", "—")),
+                ("Sources Checked",     ti.get("sources_checked", "—")),
+            ]))
+
+        confirmed = fs.get("integrated_findings", {}).get("confirmed_families", [])
+        if confirmed:
+            elems.append(Spacer(1, 6))
+            elems.append(Paragraph("Confirmed Malware Families", self.styles["h2"]))
+            elems.extend(self._bullet_list(confirmed))
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 2 — THREAT ASSESSMENT DASHBOARD
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_threat_score_dashboard(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("2", "THREAT ASSESSMENT DASHBOARD"))
+
+        analysis_meta = data.get("analysis", {})
+        malscore      = analysis_meta.get("malscore", 0)
+        score_val     = float(malscore) if malscore not in (None, "", "—") else 0.0
+
+        parsed   = data.get("parsed", {})
+        sections = parsed.get("sections", {})
+        beh_ai   = sections.get("behavior",   {}).get("ai_summary", {})
+        sig_ai   = sections.get("signatures", {}).get("ai_summary", {})
+        net_ai   = sections.get("network",    {}).get("ai_summary", {})
+        mem_ai   = sections.get("memory",     {}).get("ai_summary", {})
+
+        # ── Stat Cards ──
+        elems.append(Paragraph("At a Glance", self.styles["h2"]))
+        elems.append(self._stat_cards([
+            ("Overall Malscore",   f"{score_val:.1f}",  "Out of 10"),
+            ("Signatures",         str(sig_ai.get("total_signatures", 0)),    "Total fired"),
+            ("Network Connections", str(net_ai.get("total_tcp_connections", 0)), "TCP"),
+            ("Memory Dumps",       str(mem_ai.get("total_memory_dumps", 0)),  "Analysed"),
+        ]))
+        elems.append(Spacer(1, 14))
+
+        # ── Threat Gauge ──
+        elems.append(Paragraph("Threat Score Gauge", self.styles["h2"]))
+        gauge = self._threat_gauge_drawing(score_val, width=CONTENT_W * 0.80, height=70)
+        gauge_tbl = Table([[gauge]], colWidths=[CONTENT_W])
+        gauge_tbl.setStyle(TableStyle([
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("BACKGROUND",    (0, 0), (-1, -1), SURFACE_WHITE),
+            ("BOX",           (0, 0), (-1, -1), 0.5, SURFACE_RULE),
+            ("TOPPADDING",    (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ]))
+        elems.append(gauge_tbl)
+        elems.append(Spacer(1, 14))
+
+        # ── Component Scores (Horizontal Bar) ──
+        comp_labels = ["Behavioral", "Signatures", "Network", "Memory"]
+        comp_values = [
+            min(10, len(beh_ai.get("suspicious_processes", [])) * 2),
+            min(10, sig_ai.get("critical_signatures", 0) * 2),
+            min(10, len(net_ai.get("domains", [])) * 1.5),
+            min(10, mem_ai.get("total_memory_dumps", 0)),
+        ]
+        elems.append(Paragraph("Component Risk Scores", self.styles["h2"]))
+        elems.append(Paragraph(
+            "Derived sub-scores (0–10) per analysis component.",
+            self.styles["body_small"]))
+        comp_chart = self._horizontal_bar_chart(
+            comp_labels, comp_values,
+            width=CONTENT_W, height=110,
+            max_val=10,
+            colors_list=CHART_PALETTE,
         )
-        kpi_cards.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), self.theme["panel_bg"]),
-                    ("BOX", (0, 0), (-1, -1), 0.25, self.theme["line"]),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.25, self.theme["line"]),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        chart_wrapper = Table([[comp_chart]], colWidths=[CONTENT_W])
+        chart_wrapper.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), SURFACE_WHITE),
+            ("BOX",        (0, 0), (-1, -1), 0.5, SURFACE_RULE),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elems.append(chart_wrapper)
+        elems.append(Spacer(1, 14))
+
+        # ── Signature Severity Donut ──
+        if sig_ai:
+            critical_n   = sig_ai.get("critical_signatures",   0)
+            suspicious_n = sig_ai.get("suspicious_signatures", 0)
+            low_n        = sig_ai.get("low_severity_signatures", 0)
+            total_n      = sig_ai.get("total_signatures", 0)
+            medium_n     = max(0, total_n - critical_n - suspicious_n - low_n)
+
+            if total_n > 0:
+                elems.append(Paragraph("Signature Severity Distribution", self.styles["h2"]))
+                donut = self._donut_chart(
+                    [critical_n, suspicious_n, medium_n, low_n],
+                    ["Critical", "High", "Medium", "Low"],
+                    [SEV_CRITICAL, SEV_HIGH, SEV_MEDIUM, SEV_LOW],
+                    width=CONTENT_W * 0.65, height=160,
+                )
+                donut_wrapper = Table([[donut]], colWidths=[CONTENT_W])
+                donut_wrapper.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), SURFACE_WHITE),
+                    ("BOX",        (0, 0), (-1, -1), 0.5, SURFACE_RULE),
+                    ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
                     ("TOPPADDING", (0, 0), (-1, -1), 8),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
+                ]))
+                elems.append(donut_wrapper)
+                elems.append(Paragraph(
+                    "Figure 2.1 — Distribution of detected signatures by severity level.",
+                    self.styles["caption"]))
 
-        risk_chart = self._build_dual_risk_chart(sandbox_score, confidence_score)
+        elems.append(PageBreak())
+        return elems
 
-        return [
-            logo,
-            Spacer(1, 3 * mm),
-            Paragraph("Cybersecurity Analysis Report", self.styles["ChTitle"]),
-            Paragraph("Scope: sandbox behavioral telemetry + AI synthesis only", self.styles["ChMuted"]),
-            Spacer(1, 4 * mm),
-            kpi_cards,
-            Spacer(1, 3 * mm),
-            Paragraph("Risk Profile", self.styles["ChSubtitle"]),
-            risk_chart,
-            Spacer(1, 2 * mm),
-            meta_table,
-            Spacer(1, 4 * mm),
-        ]
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 3 — ANALYSIS OVERVIEW
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_executive_summary(self, ai_final: dict[str, Any]) -> list[Any]:
-        report = _safe_dict(ai_final.get("report"))
-        confidence_assessment = _safe_dict(ai_final.get("confidence_assessment"))
-        exec_summary = _clean_text(report.get("executive_summary"))
-        integrated = _clean_text(report.get("integrated_threat_assessment"))
-        if not exec_summary and not integrated:
-            return [Paragraph("Executive Summary", self.styles["ChHeading"]), Paragraph("AI executive summary is not available for this analysis.", self.styles["ChBody"])]
+    def _build_analysis_overview(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("3", "ANALYSIS OVERVIEW"))
 
-        threat_level = _clean_text(ai_final.get("overall_threat_level") or "Unknown")
-        confidence = ai_final.get("threat_confidence_score", "N/A")
-        badge = self._severity_chip(threat_level)
+        analysis = data.get("analysis", {})
+        parsed   = data.get("parsed", {})
+        sections = parsed.get("sections", {})
+        info_sec = sections.get("info", {})
+        raw_info = info_sec.get("raw", {})
+        machine  = raw_info.get("machine", {})
+        sum_info = info_sec.get("summary", {})
 
-        matrix_rows = [
-            ["Threat Level", badge],
-            ["Confidence", f"{confidence}%" if isinstance(confidence, (int, float)) else str(confidence)],
-            [
-                "Evidence Convergence",
-                _clean_text(confidence_assessment.get("evidence_convergence_level") or "Not specified"),
-            ],
-            [
-                "Forensic Completeness",
-                _clean_text(confidence_assessment.get("forensic_completeness") or "Not specified"),
-            ],
-        ]
-        decision_matrix = Table(self._as_table_data(matrix_rows), colWidths=[45 * mm, 115 * mm])
-        decision_matrix.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6F2EF")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, self.theme["line"]),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
+        elems.append(Paragraph("Submission Details", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("Analysis ID",    analysis.get("analysis_id", "—")),
+            ("Filename",       analysis.get("filename",    "—")),
+            ("Analysis Type",  analysis.get("analysis_type", "—")),
+            ("AI Model",       analysis.get("model_name",  "—")),
+            ("Status",         analysis.get("status",      "—")),
+            ("Started",        self._fmt_ts(analysis.get("created_at",   ""))),
+            ("Completed",      self._fmt_ts(analysis.get("completed_at", ""))),
+        ]))
+        elems.append(Spacer(1, 8))
 
-        blocks = [
-            Paragraph("Executive Summary", self.styles["ChHeading"]),
-            Paragraph("Decision Panel", self.styles["ChSubtitle"]),
-            decision_matrix,
-            Spacer(1, 1.6 * mm),
-        ]
-        if exec_summary:
-            blocks.append(Paragraph(exec_summary, self.styles["ChBody"]))
-            blocks.append(Spacer(1, 2 * mm))
-        if integrated:
-            blocks.append(Paragraph(f"<b>Integrated Threat Assessment:</b> {integrated}", self.styles["ChBody"]))
-        return blocks
+        elems.append(Paragraph("Sandbox Environment", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("CAPE Version",        raw_info.get("version",  "—")),
+            ("Machine Name",        machine.get("name",      "—")),
+            ("Platform",            machine.get("platform",  "—")),
+            ("Package",             raw_info.get("package",  "—")),
+            ("Duration",            f"{sum_info.get('total_duration_seconds', '—')} seconds"),
+            ("Completion Status",   sum_info.get("execution_completion_status", "—")),
+            ("Timeout",             str(sum_info.get("timeout", "—"))),
+        ]))
+        elems.append(Spacer(1, 8))
 
-    def _build_behavior_section(self, cape_data: dict[str, Any]) -> list[Any]:
-        behavior = _safe_dict(cape_data.get("behavior"))
-        summary = _safe_dict(behavior.get("summary"))
-        processes = _safe_list(behavior.get("processes"))
-
-        api_counter = Counter()
-        for process in processes:
-            for call in _safe_list(_safe_dict(process).get("calls")):
-                api_name = _safe_dict(call).get("api")
-                if api_name:
-                    api_counter[str(api_name)] += 1
-
-        top_api_rows = [["API", "Count"]] + [[k, str(v)] for k, v in api_counter.most_common(12)]
-        if len(top_api_rows) == 1:
-            top_api_rows.append(["No API telemetry", "0"])
-
-        top_api_table = Table(self._as_table_data(top_api_rows), colWidths=[95 * mm, 22 * mm])
-        top_api_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F3F7")),
-                    ("GRID", (0, 0), (-1, -1), 0.2, colors.HexColor("#CBD5E1")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
-
-        cards = [
-            ["Processes", str(len(processes))],
-            ["Registry keys", str(len(_safe_list(summary.get("keys"))))],
-            ["Files written", str(len(_safe_list(summary.get("write_files"))))],
-            ["Files deleted", str(len(_safe_list(summary.get("delete_files"))))],
-            ["Commands", str(len(_safe_list(summary.get("executed_commands"))))],
-            ["Mutexes", str(len(_safe_list(summary.get("mutexes"))))],
-        ]
-
-        metrics_rows = [["Behavior Metrics", ""]] + cards
-        metrics_table = Table(self._as_table_data(metrics_rows), colWidths=[45 * mm, 20 * mm])
-        metrics_table.setStyle(
-            TableStyle(
-                [
-                    ("SPAN", (0, 0), (1, 0)),
-                    ("BACKGROUND", (0, 0), (1, 0), colors.HexColor("#EAF5EE")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
-
-        network = _safe_dict(cape_data.get("network"))
-        network_rows = [
-            ["Hosts contacted", str(len(_safe_list(network.get("hosts"))))],
-            ["Domains queried", str(len(_safe_list(network.get("domains"))))],
-            ["HTTP requests", str(len(_safe_list(network.get("http"))))],
-            ["DNS queries", str(len(_safe_list(network.get("dns"))))],
-        ]
-        network_table = Table(self._as_table_data(network_rows), colWidths=[45 * mm, 20 * mm])
-        network_table.setStyle(
-            TableStyle(
-                [
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
-                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
-
-        combined = Table([[metrics_table, network_table]], colWidths=[67 * mm, 67 * mm])
-        combined.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-
-        sample_rows = [["Executed Commands", "File Operations", "Registry Keys"]]
-        commands = _safe_list(summary.get("executed_commands"))[:5]
-        file_ops = (_safe_list(summary.get("write_files")) + _safe_list(summary.get("delete_files")))[:5]
-        registry = _safe_list(summary.get("keys"))[:5]
-        max_len = max(len(commands), len(file_ops), len(registry), 1)
-        for i in range(max_len):
-            sample_rows.append(
-                [
-                    commands[i] if i < len(commands) else "-",
-                    file_ops[i] if i < len(file_ops) else "-",
-                    registry[i] if i < len(registry) else "-",
-                ]
-            )
-
-        sample_table = Table(self._as_table_data(sample_rows), colWidths=[52 * mm, 52 * mm, 52 * mm])
-        sample_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2FF")),
-                    ("GRID", (0, 0), (-1, -1), 0.2, colors.HexColor("#CBD5E1")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
-
-        behavior_chart = self._build_behavior_distribution_chart(
-            {
-                "Processes": len(processes),
-                "Commands": len(_safe_list(summary.get("executed_commands"))),
-                "Registry": len(_safe_list(summary.get("keys"))),
-                "Write Files": len(_safe_list(summary.get("write_files"))),
-                "Delete Files": len(_safe_list(summary.get("delete_files"))),
-                "Network": len(_safe_list(network.get("http"))) + len(_safe_list(network.get("dns"))),
-            }
-        )
-
-        return [
-            Paragraph("Sandbox Behavioral Analysis", self.styles["ChHeading"]),
-            combined,
-            Spacer(1, 2 * mm),
-            Paragraph("Activity Distribution", self.styles["ChSubtitle"]),
-            behavior_chart,
-            Spacer(1, 2 * mm),
-            Paragraph("Top API Calls", self.styles["ChBody"]),
-            top_api_table,
-            Spacer(1, 2 * mm),
-            Paragraph("Behavior Samples", self.styles["ChBody"]),
-            sample_table,
-            Spacer(1, 2 * mm),
-            Paragraph(
-                "This section is generated from raw sandbox behavioral output (processes, API calls, registry, file and network activity).",
-                self.styles["ChMuted"],
-            ),
-        ]
-
-    def _build_ai_section(self, ai_results: dict[str, Any], ai_final: dict[str, Any]) -> list[Any]:
-        report = _safe_dict(ai_final.get("report"))
-        confidence = ai_final.get("threat_confidence_score", "N/A")
-        level = ai_final.get("overall_threat_level", "Unknown")
-        coverage = _clean_text(report.get("analysis_scope_and_coverage"))
-        correlation = _clean_text(report.get("cross_stage_evidence_correlation"))
-        progression = _clean_text(report.get("threat_progression_and_kill_chain"))
-
-        analyzed_sections = sorted(ai_results.keys())
-        section_text = ", ".join(analyzed_sections) if analyzed_sections else "None"
-
-        content: list[Any] = [
-            Paragraph("AI Classification and Reasoning", self.styles["ChHeading"]),
-            Paragraph(
-                f"<b>Verdict:</b> {level} &nbsp;&nbsp; <b>Confidence:</b> {confidence}",
-                self.styles["ChBody"],
-            ),
-            Paragraph(f"<b>AI sections analyzed:</b> {section_text}", self.styles["ChMuted"]),
-            Spacer(1, 1.5 * mm),
-        ]
-
-        if coverage:
-            content.append(Paragraph(f"<b>Coverage:</b> {coverage}", self.styles["ChBody"]))
-            content.append(Spacer(1, 1 * mm))
-        if correlation:
-            content.append(Paragraph(f"<b>Evidence Correlation:</b> {correlation}", self.styles["ChBody"]))
-            content.append(Spacer(1, 1 * mm))
-        if progression:
-            content.append(Paragraph(f"<b>Kill Chain Narrative:</b> {progression}", self.styles["ChBody"]))
-
-        findings = self._extract_ai_findings(ai_results)
-        if findings:
-            content.append(Spacer(1, 1.5 * mm))
-            content.append(Paragraph("Key AI Findings", self.styles["ChBody"]))
-            for item in findings[:8]:
-                content.append(Paragraph(f"- {_clean_text(item)}", self.styles["ChBullet"]))
-
-        if len(content) <= 4:
-            content.append(Paragraph("Detailed AI reasoning was not available for this sample.", self.styles["ChBody"]))
-        return content
-
-    def _build_mitre_section(self, cape_data: dict[str, Any], ai_final: dict[str, Any]) -> list[Any]:
-        report = _safe_dict(ai_final.get("report"))
-        mitre_text = _clean_text(report.get("mitre_attack_mapping"))
-        cape_ttps = _safe_list(cape_data.get("ttps"))
-
-        entries: list[tuple[str, str, str, str]] = []
-        for ttp in cape_ttps:
-            ttp_dict = _safe_dict(ttp)
-            signature = _clean_text(ttp_dict.get("signature")) or "Sandbox signature"
-            for tech_id in _safe_list(ttp_dict.get("ttps")):
-                tid = _clean_text(tech_id)
-                if not tid:
-                    continue
-                tactic = self._infer_tactic(tid)
-                entries.append((tactic, tid, signature, "Sandbox behavioral mapping"))
-
-        for tid in _extract_technique_ids(mitre_text):
-            tactic = self._infer_tactic(tid)
-            entries.append((tactic, tid, "AI final synthesis", "Narrative ATT&CK mapping"))
-
-        unique_entries: list[tuple[str, str, str, str]] = []
-        seen = set()
-        for item in entries:
-            key = (item[0], item[1], item[2])
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_entries.append(item)
-
-        if not unique_entries:
-            return [
-                Paragraph("MITRE ATT&CK Mapping", self.styles["ChHeading"]),
-                Paragraph("No MITRE ATT&CK techniques were found in sandbox + AI data.", self.styles["ChBody"]),
+        components = analysis.get("components", {})
+        if components:
+            elems.append(Paragraph("Analysis Components", self.styles["h2"]))
+            comp_rows = [
+                (k.replace("_", " ").title(),
+                 "✔  Enabled" if v else "✘  Disabled")
+                for k, v in components.items()
             ]
+            elems.append(self._kv_table(comp_rows))
 
-        by_tactic = Counter([entry[0] for entry in unique_entries])
-        chart = self._build_tactic_horizontal_chart(by_tactic)
+        elems.append(PageBreak())
+        return elems
 
-        table_rows = [["Tactic", "Technique ID", "Source", "Description"]]
-        for tactic, tid, source, desc in unique_entries[:18]:
-            table_rows.append([tactic, tid, source, desc])
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 4 — FILE ANALYSIS
+    # ─────────────────────────────────────────────────────────────────────────
 
-        mitre_table = Table(self._as_table_data(table_rows), colWidths=[35 * mm, 26 * mm, 33 * mm, 64 * mm])
-        mitre_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6F2EF")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
+    def _build_file_analysis(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("4", "FILE / TARGET ANALYSIS"))
 
-        return [
-            Paragraph("MITRE ATT&CK Mapping", self.styles["ChHeading"]),
-            Paragraph("Technique distribution by tactic", self.styles["ChMuted"]),
-            chart,
-            Spacer(1, 1.5 * mm),
-            mitre_table,
-            Spacer(1, 1 * mm),
-            Paragraph("Technique mappings are collected from sandbox TTP telemetry and AI final synthesis narrative.", self.styles["ChMuted"]),
-        ]
+        target_sec = (data.get("parsed", {}).get("sections", {})
+                         .get("target", {}).get("ai_summary", {}))
 
-    def _build_threat_intel_and_iocs(self, cape_data: dict[str, Any], ai_final: dict[str, Any]) -> list[Any]:
-        report = _safe_dict(ai_final.get("report"))
-        ti_narrative = _clean_text(report.get("threat_intelligence_and_sharing"))
-        behavior = _safe_dict(cape_data.get("behavior"))
-        summary = _safe_dict(behavior.get("summary"))
+        elems.append(Paragraph("File Identity & Hashes", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("File Name",    target_sec.get("file_name",  "—")),
+            ("File Size",    f"{target_sec.get('file_size', '—')} bytes"
+                             if target_sec.get("file_size") else "—"),
+            ("File Type",    (target_sec.get("file_type", "—") or "—")[:120]),
+            ("CAPE Type",    target_sec.get("cape_type",  "—")),
+            ("SHA-256",      target_sec.get("sha256",     "—")),
+            ("MD5",          target_sec.get("md5",        "—")),
+            ("Import Hash",  target_sec.get("imphash",    "—")),
+            ("Compile Time", target_sec.get("compile_timestamp", "—")),
+        ]))
+        elems.append(Spacer(1, 8))
 
-        iocs = self._extract_iocs(cape_data, summary)
-        ti_matches = _split_numbered_items(ti_narrative)
+        elems.append(Paragraph("Attributes", self.styles["h2"]))
+        elems.append(self._kv_table([
+            (".NET Assembly", str(target_sec.get("is_dotnet",    "—"))),
+            ("Obfuscated",   str(target_sec.get("is_obfuscated", "—"))),
+            ("Packed",       str(target_sec.get("is_packed",     "—"))),
+            ("Signed",       str(target_sec.get("is_signed",     "—"))),
+        ]))
+        elems.append(Spacer(1, 8))
 
-        ioc_rows = [["IOC Type", "Values (sample)"]]
-        for label, values in [
-            ("IP addresses", iocs["ips"]),
-            ("Domains", iocs["domains"]),
-            ("URLs", iocs["urls"]),
-            ("File paths", iocs["paths"]),
-            ("Hashes", iocs["hashes"]),
-        ]:
-            sample = ", ".join(values[:5]) if values else "None"
-            ioc_rows.append([label, sample])
+        elems.append(Paragraph("Version / Masquerading Info", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("Company Name",       target_sec.get("company_name",       "—")),
+            ("Product Name",       target_sec.get("product_name",       "—")),
+            ("Original Filename",  target_sec.get("original_filename",  "—")),
+            ("Legal Copyright",    target_sec.get("legal_copyright",    "—")),
+        ]))
 
-        ioc_table = Table(self._as_table_data(ioc_rows), colWidths=[35 * mm, 123 * mm])
-        ioc_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
-                ]
-            )
-        )
+        if target_sec.get("has_self_extract"):
+            elems.append(Spacer(1, 8))
+            elems.append(Paragraph("Self-Extraction Details", self.styles["h2"]))
+            elems.append(self._kv_table([
+                ("Method",          target_sec.get("self_extract_method",    "—")),
+                ("Extracted Count", str(target_sec.get("extracted_files_count", "—"))),
+                ("Extracted Types", ", ".join(target_sec.get("extracted_file_types", []))),
+            ]))
 
-        blocks: list[Any] = [
-            Paragraph("Threat Intelligence and IOC Extraction", self.styles["ChHeading"]),
-            Paragraph("IOC Composition", self.styles["ChSubtitle"]),
-            self._build_ioc_composition_chart(iocs),
-            Spacer(1, 1.2 * mm),
-            ioc_table,
-            Spacer(1, 1.5 * mm),
-        ]
+        elems.append(PageBreak())
+        return elems
 
-        if ti_matches:
-            blocks.append(Paragraph("Threat Intelligence Context", self.styles["ChBody"]))
-            for line in ti_matches[:7]:
-                blocks.append(Paragraph(f"- {_clean_text(line)}", self.styles["ChBullet"]))
-        else:
-            blocks.append(Paragraph("No explicit threat-intelligence narrative was present in AI context.", self.styles["ChMuted"]))
-        return blocks
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 5 — CAPE FINDINGS
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_mitigation_section(self, ai_final: dict[str, Any]) -> list[Any]:
-        report = _safe_dict(ai_final.get("report"))
-        response = _split_numbered_items(_clean_text(report.get("incident_response_guidance")))
-        lessons = _split_numbered_items(_clean_text(report.get("lessons_learned_and_recommendations")))
+    def _build_cape_findings(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("5", "CAPE SANDBOX FINDINGS"))
 
-        if not response and not lessons:
-            return [
-                Paragraph("Mitigation Recommendations", self.styles["ChHeading"]),
-                Paragraph("AI mitigation guidance is not available for this run.", self.styles["ChBody"]),
-            ]
+        cape_ai = (data.get("parsed", {}).get("sections", {})
+                      .get("cape", {}).get("ai_summary", {}))
 
-        content: list[Any] = [
-            PageBreak(),
-            Paragraph("Mitigation Recommendations", self.styles["ChHeading"]),
-            Paragraph("Actionable response recommendations from AI synthesis.", self.styles["ChMuted"]),
-            Spacer(1, 1.5 * mm),
-        ]
+        elems.append(Paragraph("Detection Summary", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("Detected Families",  ", ".join(cape_ai.get("detected_families", [])) or "—"),
+            ("Total Payloads",     str(cape_ai.get("total_payloads",    "—"))),
+            ("Total Configs",      str(cape_ai.get("total_configs",     "—"))),
+            ("Has Malware Config", str(cape_ai.get("has_malware_config","—"))),
+            ("Primary Injection",  cape_ai.get("primary_injection_method", "—")),
+        ]))
+        elems.append(Spacer(1, 8))
 
-        if response:
-            content.append(Paragraph("Incident Response Guidance", self.styles["ChBody"]))
-            for idx, item in enumerate(response[:10], start=1):
-                content.append(Paragraph(f"{idx}. {_clean_text(item)}", self.styles["ChBullet"]))
-            content.append(Spacer(1, 1.2 * mm))
+        crit_yara = cape_ai.get("critical_yara_rules", [])
+        if crit_yara:
+            elems.append(Paragraph("Critical YARA Rules Matched", self.styles["h2"]))
+            elems.extend(self._bullet_list(crit_yara))
 
-        if lessons:
-            content.append(Paragraph("Defensive Improvement Recommendations", self.styles["ChBody"]))
-            for idx, item in enumerate(lessons[:10], start=1):
-                content.append(Paragraph(f"{idx}. {_clean_text(item)}", self.styles["ChBullet"]))
+        elems.append(PageBreak())
+        return elems
 
-        return content
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 6 — SIGNATURES
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_compact_brief(
-        self,
-        analysis: dict[str, Any],
-        cape_data: dict[str, Any],
-        ai_results: dict[str, Any],
-        ai_final: dict[str, Any],
-    ) -> list[Any]:
-        behavior = _safe_dict(cape_data.get("behavior"))
-        summary = _safe_dict(behavior.get("summary"))
-        iocs = self._extract_iocs(cape_data, summary)
-        top_findings = self._extract_ai_findings(ai_results)[:6]
-        threat_level = _clean_text(ai_final.get("overall_threat_level") or "Unknown")
-        confidence = ai_final.get("threat_confidence_score", "N/A")
+    def _build_signatures(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("6", "SIGNATURES ANALYSIS"))
 
-        brief_rows = [
-            ["Sample", str(analysis.get("filename", "Unknown"))],
-            ["Threat Level", self._severity_chip(threat_level)],
-            ["AI Confidence", f"{confidence}%" if isinstance(confidence, (int, float)) else str(confidence)],
-            ["Processes", str(len(_safe_list(behavior.get("processes"))))],
-            ["API Calls (Top Set)", str(sum(Counter([_safe_dict(call).get("api") for p in _safe_list(behavior.get("processes")) for call in _safe_list(_safe_dict(p).get("calls")) if _safe_dict(call).get("api")]).values()))],
-            ["MITRE Techniques", str(len(_safe_list(cape_data.get("ttps"))))],
-            ["Total IOCs", str(sum(len(v) for v in iocs.values()))],
-        ]
-        brief_table = Table(self._as_table_data(brief_rows), colWidths=[45 * mm, 115 * mm])
-        brief_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#ECFFF5")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, self.theme["line"]),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
+        sig_ai = (data.get("parsed", {}).get("sections", {})
+                     .get("signatures", {}).get("ai_summary", {}))
 
-        findings_rows = [["Top Findings"]]
-        for item in top_findings:
-            findings_rows.append([f"- {_clean_text(item)}"])
-        if len(findings_rows) == 1:
-            findings_rows.append(["- No summarized findings available"]) 
+        if not sig_ai:
+            elems.append(Paragraph("No signatures data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
 
-        findings_table = Table(self._as_table_data(findings_rows), colWidths=[160 * mm])
-        findings_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (0, 0), colors.HexColor("#EAF3FF")),
-                    ("GRID", (0, 0), (-1, -1), 0.25, self.theme["line"]),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
+        elems.append(Paragraph("Signature Statistics", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("MalScore",              str(sig_ai.get("malscore",              "—"))),
+            ("MalStatus",             sig_ai.get("malstatus",                 "—")),
+            ("Total Signatures Fired", str(sig_ai.get("total_signatures",     "—"))),
+            ("Critical",              str(sig_ai.get("critical_signatures",   "—"))),
+            ("High / Suspicious",     str(sig_ai.get("suspicious_signatures", "—"))),
+        ]))
+        elems.append(Spacer(1, 8))
 
-        small_charts = Table(
-            [[
-                self._build_behavior_distribution_chart(
-                    {
-                        "Proc": len(_safe_list(behavior.get("processes"))),
-                        "Cmd": len(_safe_list(summary.get("executed_commands"))),
-                        "Reg": len(_safe_list(summary.get("keys"))),
-                        "Files": len(_safe_list(summary.get("write_files")))
-                        + len(_safe_list(summary.get("delete_files"))),
-                        "Net": len(_safe_list(_safe_dict(cape_data.get("network")).get("http")))
-                        + len(_safe_list(_safe_dict(cape_data.get("network")).get("dns"))),
-                    },
-                    compact=True,
-                ),
-                self._build_ioc_composition_chart(iocs, compact=True),
-            ]],
-            colWidths=[76 * mm, 76 * mm],
-        )
-        small_charts.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 1.5 * mm),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 1.5 * mm),
-                ]
-            )
-        )
+        high_sigs = sig_ai.get("high_severity_signatures", [])
+        if high_sigs:
+            elems.append(Paragraph("High-Severity Signatures", self.styles["h2"]))
+            for sig in high_sigs[:15]:
+                name = sig.get("name", "Unknown")
+                desc = sig.get("description", "")
+                elems.append(Paragraph(f"· <b>{name}</b>", self.styles["bullet"]))
+                if desc:
+                    elems.append(Paragraph(f"  {desc[:200]}", self.styles["body_small"]))
 
-        return [
-            PageBreak(),
-            Paragraph("Quick Brief (One-Page)", self.styles["ChHeading"]),
-            Paragraph("Executive snapshot for rapid analyst handoff.", self.styles["ChMuted"]),
-            Spacer(1, 1.5 * mm),
-            brief_table,
-            Spacer(1, 1.5 * mm),
-            small_charts,
-            Spacer(1, 1.5 * mm),
-            findings_table,
-            PageBreak(),
-        ]
+        capabilities = []
+        if sig_ai.get("has_anti_vm"):      capabilities.append("Anti-VM / Anti-Sandbox Evasion")
+        if sig_ai.get("has_persistence"):  capabilities.append("Persistence Mechanism")
+        if sig_ai.get("has_injection"):    capabilities.append("Process Injection")
 
-    def _get_ai_final(self, ai_results: dict[str, Any]) -> dict[str, Any]:
-        final_block = _safe_dict(ai_results.get("final_synthesis"))
-        final_analysis = _safe_dict(final_block.get("analysis"))
-        return final_analysis if final_analysis else final_block
+        if capabilities:
+            elems.append(Spacer(1, 8))
+            elems.append(Paragraph("Detected Capabilities", self.styles["h2"]))
+            elems.extend(self._bullet_list(capabilities))
 
-    def _infer_tactic(self, technique_id: str) -> str:
-        base = technique_id.split(".")[0]
-        return TACTIC_BY_TECHNIQUE_PREFIX.get(base, "Unknown")
+        elems.append(PageBreak())
+        return elems
 
-    def _extract_iocs(
-        self, cape_data: dict[str, Any], summary: dict[str, Any]
-    ) -> dict[str, list[str]]:
-        all_text_parts: list[str] = []
-        all_paths = []
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 7 — BEHAVIORAL
+    # ─────────────────────────────────────────────────────────────────────────
 
-        for key in ["files", "write_files", "delete_files", "executed_commands", "keys"]:
-            values = [str(v) for v in _safe_list(summary.get(key))]
-            all_text_parts.extend(values)
-            if "file" in key:
-                all_paths.extend(values)
+    def _build_behavioral(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("7", "BEHAVIORAL ANALYSIS"))
 
-        dropped = _safe_list(cape_data.get("dropped"))
-        for d in dropped:
-            path = _safe_dict(d).get("filepath") or _safe_dict(d).get("name")
-            if path:
-                all_paths.append(str(path))
-                all_text_parts.append(str(path))
+        beh_ai = (data.get("parsed", {}).get("sections", {})
+                     .get("behavior", {}).get("ai_summary", {}))
 
-        full_text = "\n".join(all_text_parts)
+        if not beh_ai:
+            elems.append(Paragraph("No behavior data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
 
-        ips = sorted(set(re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", full_text)))
-        urls = sorted(set(re.findall(r"https?://[^\s\"']+", full_text)))
-        domains = sorted(
-            set(
-                re.findall(
-                    r"\b(?:[a-zA-Z0-9-]+\.)+(?:com|net|org|io|ru|cn|info|biz|co|gov|edu)\b",
-                    full_text,
+        elems.append(Paragraph("Execution Summary", self.styles["h2"]))
+        elems.append(self._stat_cards([
+            ("Processes",       str(beh_ai.get("total_processes", 0)),                "Spawned"),
+            ("Files Written",   str(len(beh_ai.get("files_written", []))),            "Paths"),
+            ("Mutexes",         str(len(beh_ai.get("mutexes", []))),                  "Created"),
+            ("Commands",        str(len(beh_ai.get("executed_commands", []))),        "Executed"),
+        ]))
+        elems.append(Spacer(1, 12))
+
+        # API call distribution chart
+        call_stats = beh_ai.get("call_stats", [])
+        if call_stats:
+            cat_totals: Dict[str, int] = {}
+            for stat in call_stats[:3]:
+                for cat, count in stat.get("category_stats", {}).items():
+                    cat_totals[cat] = cat_totals.get(cat, 0) + count
+            if cat_totals:
+                # Take top 8
+                sorted_cats = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)[:8]
+                labels = [k for k, _ in sorted_cats]
+                values = [v for _, v in sorted_cats]
+                elems.append(Paragraph("API Call Distribution", self.styles["h2"]))
+                elems.append(Paragraph(
+                    "Aggregate API call counts across the top 3 monitored processes.",
+                    self.styles["body_small"]))
+                chart = self._horizontal_bar_chart(
+                    labels, values,
+                    width=CONTENT_W, height=max(100, len(labels) * 18 + 40),
+                    colors_list=[CHART_PALETTE[1]] * len(labels),
                 )
-            )
-        )
-        hashes = sorted(
-            set(
-                re.findall(
-                    r"\b[a-fA-F0-9]{64}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{32}\b",
-                    full_text,
-                )
-            )
-        )
+                chart_wrapper = Table([[chart]], colWidths=[CONTENT_W])
+                chart_wrapper.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), SURFACE_WHITE),
+                    ("BOX",        (0, 0), (-1, -1), 0.5, SURFACE_RULE),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]))
+                elems.append(chart_wrapper)
+                elems.append(Paragraph(
+                    "Figure 7.1 — API categories by call volume.",
+                    self.styles["caption"]))
+                elems.append(Spacer(1, 8))
 
-        return {
-            "ips": ips,
-            "domains": domains,
-            "urls": urls,
-            "hashes": hashes,
-            "paths": sorted(set(all_paths)),
-        }
+        suspicious = beh_ai.get("suspicious_processes", [])
+        if suspicious:
+            elems.append(Paragraph("Suspicious Processes", self.styles["h2"]))
+            for proc in suspicious[:10]:
+                name = proc.get("name", "Unknown")
+                pid  = proc.get("pid",  "—")
+                elems.append(Paragraph(f"· <b>{name}</b>  (PID {pid})", self.styles["bullet"]))
 
-    def _kpi_cell(self, label: str, value: str) -> Paragraph:
-        return Paragraph(
-            f'<font color="#4B5563" size="7"><b>{escape(label)}</b></font><br/>'
-            f'<font color="#0F172A" size="14"><b>{escape(value)}</b></font>',
-            self.styles["ChBody"],
-        )
+        commands = beh_ai.get("executed_commands", [])
+        if commands:
+            elems.append(Spacer(1, 8))
+            elems.append(Paragraph("Executed Commands", self.styles["h2"]))
+            for cmd in commands[:10]:
+                elems.append(Paragraph(str(cmd)[:160], self.styles["mono"]))
 
-    def _severity_chip(self, level: str) -> Paragraph:
-        normalized = level.lower().strip()
-        if "critical" in normalized:
-            bg, fg = "#FEE2E2", "#991B1B"
-        elif "high" in normalized:
-            bg, fg = "#FFF7ED", "#9A3412"
-        elif "medium" in normalized:
-            bg, fg = "#FEF3C7", "#92400E"
-        elif "low" in normalized:
-            bg, fg = "#DCFCE7", "#166534"
-        else:
-            bg, fg = "#E2E8F0", "#1E293B"
-        return Paragraph(
-            f'<font backColor="{bg}" color="{fg}"><b>&nbsp; {escape(level or "Unknown")} &nbsp;</b></font>',
-            self.styles["ChTableCell"],
-        )
+        elems.append(PageBreak())
+        return elems
 
-    def _build_dual_risk_chart(self, sandbox_score: float, ai_confidence: float) -> Drawing:
-        chart = Drawing(160 * mm, 40 * mm)
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 8 — MEMORY
+    # ─────────────────────────────────────────────────────────────────────────
 
-        bar = VerticalBarChart()
-        bar.x = 15
-        bar.y = 8
-        bar.height = 70
-        bar.width = 360
-        bar.data = [[max(0.0, min(sandbox_score, 10.0)), max(0.0, min(ai_confidence / 10.0, 10.0))]]
-        bar.categoryAxis.categoryNames = ["Sandbox", "AI"]
-        bar.categoryAxis.labels.fontSize = 8
-        bar.valueAxis.valueMin = 0
-        bar.valueAxis.valueMax = 10
-        bar.valueAxis.valueStep = 2
-        bar.valueAxis.labels.fontSize = 7
-        bar.bars[0].fillColor = self.theme["deep_blue"]
-        chart.add(bar)
-        chart.add(String(12, 84, "Unified Threat Signal (0-10 scale)", fontSize=8, fillColor=self.theme["text"]))
-        chart.add(Rect(245, 84, 6, 6, fillColor=self.theme["deep_blue"], strokeColor=None))
-        chart.add(String(255, 83, "Sandbox & AI scores", fontSize=7, fillColor=self.theme["text"]))
-        return chart
+    def _build_memory(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("8", "MEMORY ANALYSIS"))
 
-    def _build_behavior_distribution_chart(self, metrics: dict[str, int], compact: bool = False) -> Drawing:
-        names = list(metrics.keys())
-        values = [max(0, int(v)) for v in metrics.values()]
-        if compact:
-            chart = Drawing(70 * mm, 40 * mm)
-            bar_x, bar_y, bar_h, bar_w = 8, 8, 62, 176
-            label_angle = 35
-            cat_font = 6
-            val_font = 6
-        else:
-            chart = Drawing(160 * mm, 45 * mm)
-            bar_x, bar_y, bar_h, bar_w = 12, 10, 86, 395
-            label_angle = 28
-            cat_font = 7
-            val_font = 7
-        bar = VerticalBarChart()
-        bar.x = bar_x
-        bar.y = bar_y
-        bar.height = bar_h
-        bar.width = bar_w
-        bar.data = [values]
-        bar.categoryAxis.categoryNames = names
-        bar.categoryAxis.labels.angle = label_angle
-        bar.categoryAxis.labels.fontSize = cat_font
-        max_val = max(values + [1])
-        step = max(1, max_val // 5)
-        bar.valueAxis.valueMin = 0
-        bar.valueAxis.valueMax = max_val + step
-        bar.valueAxis.valueStep = step
-        bar.valueAxis.labels.fontSize = val_font
-        bar.bars[0].fillColor = self.theme["secondary"]
-        chart.add(bar)
-        return chart
+        mem_ai = (data.get("parsed", {}).get("sections", {})
+                     .get("memory", {}).get("ai_summary", {}))
 
-    def _build_tactic_horizontal_chart(self, tactic_counts: Counter[str]) -> Drawing:
-        sorted_items = sorted(tactic_counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
-        labels = [item[0] for item in sorted_items] or ["None"]
-        values = [item[1] for item in sorted_items] or [0]
+        if not mem_ai:
+            elems.append(Paragraph("No memory analysis data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
 
-        chart = Drawing(160 * mm, 55 * mm)
-        hbar = HorizontalBarChart()
-        hbar.x = 90
-        hbar.y = 10
-        hbar.height = 120
-        hbar.width = 300
-        hbar.data = [values]
-        hbar.categoryAxis.categoryNames = labels
-        hbar.categoryAxis.labels.fontSize = 7
-        hbar.categoryAxis.labels.dx = -5
-        hbar.valueAxis.valueMin = 0
-        hbar.valueAxis.valueMax = max(values + [1])
-        hbar.valueAxis.valueStep = 1
-        hbar.valueAxis.labels.fontSize = 7
-        hbar.bars[0].fillColor = self.theme["teal"]
-        chart.add(hbar)
-        return chart
+        elems.append(Paragraph("Memory Scan Results", self.styles["h2"]))
+        elems.append(self._kv_table([
+            ("Memory Dumps",          str(mem_ai.get("total_memory_dumps",             "—"))),
+            ("Dumps with YARA Hits",  str(mem_ai.get("memory_dumps_with_yara",         "—"))),
+            ("Shellcode Detected",    str(mem_ai.get("memory_shellcode_detected",       "—"))),
+            ("Injection Detected",    str(mem_ai.get("memory_injection_detected",       "—"))),
+            ("Extracted PE Files",    str(mem_ai.get("extracted_pe_from_memory_count",  "—"))),
+        ]))
+        elems.append(Spacer(1, 8))
 
-    def _build_ioc_composition_chart(self, iocs: dict[str, list[str]], compact: bool = False) -> Drawing:
-        labels = ["IPs", "Domains", "URLs", "Hashes", "Paths"]
-        values = [
-            len(iocs.get("ips", [])),
-            len(iocs.get("domains", [])),
-            len(iocs.get("urls", [])),
-            len(iocs.get("hashes", [])),
-            len(iocs.get("paths", [])),
+        critical = mem_ai.get("critical_malware_rules", [])
+        if critical:
+            elems.append(Paragraph("Critical YARA Rules (Memory)", self.styles["h2"]))
+            elems.extend(self._bullet_list(critical))
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 9 — NETWORK
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_network(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("9", "NETWORK ANALYSIS"))
+
+        net_ai = (data.get("parsed", {}).get("sections", {})
+                     .get("network", {}).get("ai_summary", {}))
+
+        if not net_ai:
+            elems.append(Paragraph("No network analysis data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
+
+        elems.append(Paragraph("Connection Overview", self.styles["h2"]))
+        elems.append(self._stat_cards([
+            ("DNS Queries",     str(net_ai.get("total_dns_queries",    0)), "Lookups"),
+            ("TCP",             str(net_ai.get("total_tcp_connections", 0)), "Connections"),
+            ("UDP",             str(net_ai.get("total_udp_connections", 0)), "Connections"),
+            ("Suspicious",      str(net_ai.get("has_suspicious_domains", "—")), "Domains"),
+        ]))
+        elems.append(Spacer(1, 10))
+
+        domains = net_ai.get("domains", [])
+        if domains:
+            elems.append(Paragraph("Domains Contacted", self.styles["h2"]))
+            elems.extend(self._mono_list(domains[:25]))
+
+        ips = net_ai.get("ips", [])
+        if ips:
+            elems.append(Spacer(1, 8))
+            elems.append(Paragraph("IP Addresses Contacted", self.styles["h2"]))
+            elems.extend(self._mono_list(ips[:25]))
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 10 — THREAT INTEL
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_threat_intel(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("10", "THREAT INTELLIGENCE"))
+
+        threat_intel = data.get("threat_intel", {})
+        if not threat_intel:
+            elems.append(Paragraph("No threat intelligence data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
+
+        results = threat_intel.get("results", {})
+
+        # VirusTotal
+        vt = results.get("virustotal", {})
+        if vt and vt.get("success"):
+            vd = vt.get("data", {})
+            stats = vd.get("detection_stats", {})
+            elems.append(Paragraph("VirusTotal", self.styles["h2"]))
+            elems.append(self._severity_row("Threat Level",
+                                            vd.get("threat_level", "UNKNOWN").upper()))
+            elems.append(self._kv_table([
+                ("Found",             str(vd.get("found", "—"))),
+                ("Detection Ratio",   stats.get("detection_ratio", "—")),
+                ("Threat Score",      str(vd.get("threat_score", "—"))),
+                ("Popular Label",     vd.get("popular_threat_label", "—")),
+            ]))
+            elems.append(Spacer(1, 8))
+
+        # MalwareBazaar
+        mb = results.get("malwarebazaar", {})
+        if mb and mb.get("success"):
+            md = mb.get("data", {})
+            first_s = (md.get("samples") or [{}])[0]
+            elems.append(Paragraph("MalwareBazaar", self.styles["h2"]))
+            elems.append(self._kv_table([
+                ("Found",      str(md.get("found", "—"))),
+                ("Signature",  first_s.get("signature",  "—")),
+                ("Tags",       ", ".join(first_s.get("tags", []))),
+                ("First Seen", first_s.get("first_seen", "—")),
+            ]))
+            elems.append(Spacer(1, 8))
+
+        # Hybrid Analysis
+        ha = results.get("hybrid_analysis", {})
+        if ha and ha.get("success"):
+            hd = ha.get("data", {})
+            elems.append(Paragraph("Hybrid Analysis", self.styles["h2"]))
+            elems.append(self._severity_row("Verdict",
+                                            hd.get("verdict", "UNKNOWN").upper()))
+            elems.append(self._kv_table([
+                ("Found",       str(hd.get("found",       "—"))),
+                ("Threat Score", str(hd.get("threat_score","—"))),
+                ("VX Family",   hd.get("vx_family",       "—")),
+            ]))
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 11 — MITRE
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_mitre(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("11", "MITRE ATT&CK MAPPING"))
+
+        ai    = data.get("ai_analysis", {}).get("results", {})
+        fs    = ai.get("final_synthesis", {}).get("analysis", {})
+        mitre = fs.get("mitre_attack", {})
+
+        if not mitre:
+            sig_ai = (data.get("parsed", {}).get("sections", {})
+                         .get("signatures", {}).get("ai_summary", {}))
+            ttps = sig_ai.get("detected_ttps", [])
+            if ttps:
+                elems.append(Paragraph("Detected Techniques", self.styles["h2"]))
+                elems.extend(self._bullet_list(ttps[:20]))
+            else:
+                elems.append(Paragraph("No MITRE ATT&CK data available.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
+
+        tactics = mitre.get("tactics", [])
+        if tactics:
+            elems.append(Paragraph("Observed Tactics", self.styles["h2"]))
+            elems.extend(self._bullet_list(tactics[:15]))
+            elems.append(Spacer(1, 8))
+
+        techniques = mitre.get("techniques", [])
+        if techniques:
+            elems.append(Paragraph("Techniques", self.styles["h2"]))
+            elems.extend(self._bullet_list(techniques[:25]))
+
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 12 — IOCs
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_iocs(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("12", "INDICATORS OF COMPROMISE (IOCs)"))
+
+        ai   = data.get("ai_analysis", {}).get("results", {})
+        fs   = ai.get("final_synthesis", {}).get("analysis", {})
+        iocs = fs.get("iocs_consolidated", {})
+
+        if not iocs:
+            elems.append(Paragraph("No IOCs identified.", self.styles["body"]))
+            elems.append(PageBreak())
+            return elems
+
+        sections_map = [
+            ("SHA-256 Hashes",  "sha256"),
+            ("MD5 Hashes",      "md5"),
+            ("Domains",         "domains"),
+            ("IP Addresses",    "ip_addresses"),
+            ("File Paths",      "file_paths"),
+            ("Mutexes",         "mutexes"),
+            ("YARA Rules",      "yara_rules"),
         ]
-        if sum(values) == 0:
-            values = [1, 0, 0, 0, 0]
+        for title, key in sections_map:
+            items = iocs.get(key, [])
+            if items:
+                elems.append(Paragraph(title, self.styles["h2"]))
+                elems.extend(self._mono_list(items[:25]))
+                elems.append(Spacer(1, 4))
 
-        chart = Drawing(70 * mm, 40 * mm) if compact else Drawing(160 * mm, 45 * mm)
-        pie = Pie()
-        if compact:
-            pie.x = 86
-            pie.y = 6
-            pie.width = 62
-            pie.height = 62
-        else:
-            pie.x = 110
-            pie.y = 12
-            pie.width = 95
-            pie.height = 95
-        pie.data = values
-        pie.labels = labels
-        pie.slices.fontSize = 6 if compact else 7
-        pie.slices.strokeWidth = 0.4
-        palette = [
-            self.theme["primary"],
-            self.theme["secondary"],
-            self.theme["accent"],
-            self.theme["teal"],
-            self.theme["deep_blue"],
+        elems.append(PageBreak())
+        return elems
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECTION 13 — INCIDENT RESPONSE
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_incident_response(self, data: Dict) -> list:
+        elems = []
+        elems.extend(self._section_header("13", "INCIDENT RESPONSE GUIDANCE"))
+
+        ai  = data.get("ai_analysis", {}).get("results", {})
+        fs  = ai.get("final_synthesis", {}).get("analysis", {})
+        ir  = fs.get("incident_response",       {})
+        inv = fs.get("investigation_priority",  {})
+
+        priority = inv.get("priority_level", "")
+        if priority:
+            elems.append(self._severity_row("Investigation Priority", priority.upper()))
+            elems.append(Spacer(1, 8))
+
+        ir_sections = [
+            ("Immediate Actions",  "immediate_actions"),
+            ("Containment Steps",  "containment_steps"),
+            ("Eradication Steps",  "eradication_steps"),
+            ("Recovery Steps",     "recovery_steps"),
         ]
-        for idx, color in enumerate(palette):
-            pie.slices[idx].fillColor = color
-        chart.add(pie)
-        if compact:
-            chart.add(String(8, 68, "IOC Type Mix", fontSize=7, fillColor=self.theme["text"]))
-            chart.add(String(8, 57, f"Total: {sum(values)}", fontSize=8, fillColor=self.theme["text"]))
-        else:
-            chart.add(String(16, 92, "IOC Type Mix", fontSize=8, fillColor=self.theme["text"]))
-            chart.add(String(16, 78, f"Total IOCs: {sum(values)}", fontSize=10, fillColor=self.theme["text"]))
-        return chart
+        for title, key in ir_sections:
+            items = ir.get(key, [])
+            if items:
+                elems.append(Paragraph(title, self.styles["h2"]))
+                elems.extend(self._bullet_list(items[:10]))
+                elems.append(Spacer(1, 6))
 
-    def _build_logo_flowable(self) -> Any:
-        for candidate in self.logo_candidates:
-            if candidate.exists():
-                img = Image(str(candidate))
-                img._restrictSize(55 * mm, 20 * mm)
-                return img
+        queries = inv.get("suggested_hunting_queries", [])
+        if queries:
+            elems.append(self._divider())
+            elems.append(Paragraph("Suggested Threat Hunting Queries", self.styles["h2"]))
+            for q in queries[:10]:
+                elems.append(Paragraph(str(q), self.styles["mono"]))
+                elems.append(Spacer(1, 3))
 
-        fallback = Drawing(60, 40)
-        fallback.add(Rect(0, 2, 14, 30, fillColor=colors.HexColor("#0A7C66"), strokeColor=None))
-        fallback.add(Rect(16, 9, 14, 23, fillColor=colors.HexColor("#169A84"), strokeColor=None))
-        fallback.add(Rect(32, 16, 14, 16, fillColor=colors.HexColor("#39B69F"), strokeColor=None))
-        fallback.add(String(0, -1, "CHAMELEON", fontSize=8, fillColor=colors.HexColor("#143D35")))
-        return fallback
+        return elems
 
-    def _as_table_data(self, rows: list[list[Any]]) -> list[list[Paragraph]]:
-        formatted: list[list[Paragraph]] = []
-        for r_idx, row in enumerate(rows):
-            formatted_row: list[Paragraph] = []
-            for c_idx, cell in enumerate(row):
-                if isinstance(cell, Paragraph):
-                    formatted_row.append(cell)
-                    continue
-                style = self.styles["ChTableHeader"] if r_idx == 0 else self.styles["ChTableCell"]
-                if c_idx == 0 and r_idx > 0:
-                    style = self.styles["ChTableHeader"]
-                formatted_row.append(Paragraph(self._format_cell(cell), style))
-            formatted.append(formatted_row)
-        return formatted
 
-    def _format_cell(self, value: Any) -> str:
-        raw = _clean_text(str(value) if value is not None else "")
-        safe = escape(raw)
-        return self._break_long_tokens(safe)
-
-    def _break_long_tokens(self, text: str, max_token: int = 38) -> str:
-        tokens = text.split(" ")
-        wrapped: list[str] = []
-        for token in tokens:
-            if len(token) <= max_token:
-                wrapped.append(token)
-                continue
-            # Break very long uninterrupted tokens (hashes/paths/URLs) to prevent cell overflow.
-            chunked = [token[i : i + max_token] for i in range(0, len(token), max_token)]
-            wrapped.append("<br/>".join(chunked))
-        return " ".join(wrapped)
-
-    def _extract_ai_findings(self, ai_results: dict[str, Any]) -> list[str]:
-        findings: list[str] = []
-        behavior = _safe_dict(_safe_dict(ai_results.get("behavior_analysis")).get("analysis"))
-        final_synthesis = _safe_dict(_safe_dict(ai_results.get("final_synthesis")).get("analysis"))
-        network = _safe_dict(_safe_dict(ai_results.get("network_analysis")).get("analysis"))
-        memory = _safe_dict(_safe_dict(ai_results.get("memory_analysis")).get("analysis"))
-
-        findings.extend(_safe_list(_safe_dict(behavior.get("ai_insights_summary")).get("key_findings")))
-        findings.extend(_safe_list(_safe_dict(network.get("network_forensic_insights")).get("key_network_findings")))
-        findings.extend(_safe_list(_safe_dict(memory.get("ai_forensic_insights")).get("key_memory_findings")))
-
-        report = _safe_dict(final_synthesis.get("report"))
-        for key in ["executive_summary", "integrated_threat_assessment", "cross_stage_evidence_correlation"]:
-            value = _clean_text(report.get(key))
-            if value:
-                findings.append(value)
-
-        deduped: list[str] = []
-        seen = set()
-        for item in findings:
-            item_text = _clean_text(item)
-            if not item_text:
-                continue
-            k = item_text.lower()
-            if k in seen:
-                continue
-            seen.add(k)
-            deduped.append(item_text)
-        return deduped
+# ── Singleton ─────────────────────────────────────────────────────────────────
+pdf_report_service = PDFReportService()
