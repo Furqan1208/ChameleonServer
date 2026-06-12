@@ -1,8 +1,10 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
+import aiohttp
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1070,7 +1072,7 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
         section_name: str,
         task_id: str = None,
     ) -> Dict[str, Any]:
-        """Call AI model with fallback logic."""
+        """Call AI model with fallback logic, including OpenRouter as final fallback."""
         models = self._get_model_priority(preferred_model, section_name)
 
         self.logger.info(f"Model priority for {section_name}: {models}")
@@ -1116,8 +1118,9 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
 
                 self.logger.error(f"{model_name} failed: {error_msg[:100]}")
 
-                if any(keyword in error_msg for keyword in ["rate", "quota", "429"]):
-                    await asyncio.sleep(3)
+                if any(keyword in error_msg for keyword in ["rate", "quota", "429", "busy", "unavailable", "resource exhausted"]):
+                    self.logger.warning(f"Rate limit or busy for {model_name}, trying next...")
+                    await asyncio.sleep(2)
                 elif any(
                     keyword in error_msg
                     for keyword in ["token", "length", "too long", "limit"]
@@ -1127,31 +1130,194 @@ You MUST return a COMPLETE JSON structure with all analysis sections, not just i
                     )
                     continue
 
-        raise Exception(f"All models failed. Last error: {last_error}")
+        # If all primary models failed, try OpenRouter as final fallback
+        self.logger.warning("All primary models failed (likely rate limits or busy), attempting OpenRouter fallback...")
+        
+        try:
+            openrouter_result = await self._call_openrouter_fallback(prompt, section_name, task_id)
+            if openrouter_result and openrouter_result.get("response"):
+                self.logger.info("OpenRouter fallback succeeded!")
+                return openrouter_result
+            else:
+                raise Exception("OpenRouter returned empty or invalid response")
+        except Exception as e:
+            self.logger.error(f"OpenRouter fallback also failed: {str(e)}")
+            # Try alternative OpenRouter model as last resort
+            try:
+                self.logger.info("Trying alternative OpenRouter model...")
+                openrouter_result2 = await self._call_openrouter_fallback(prompt, section_name, task_id, use_alternative=True)
+                if openrouter_result2 and openrouter_result2.get("response"):
+                    self.logger.info("Alternative OpenRouter model succeeded!")
+                    return openrouter_result2
+            except Exception as e2:
+                self.logger.error(f"Alternative OpenRouter also failed: {str(e2)}")
+            
+            raise Exception(f"All models including OpenRouter failed. Last error: {last_error}")
+
+    async def _call_openrouter_fallback(
+        self,
+        prompt: str,
+        section_name: str,
+        task_id: str = None,
+        use_alternative: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Call OpenRouter API as a final fallback when Gemini is rate limited.
+        Uses free models with large context windows (1M tokens).
+        
+        Max token limits:
+        - NVIDIA Nemotron 3 Ultra: 65,536 tokens output (65K)
+        - OpenRouter Owl Alpha: 32,768 tokens output (32K) - conservative estimate
+        """
+        self.logger.info(f"Attempting OpenRouter fallback for {section_name}")
+        
+        # Free OpenRouter models with good context windows (1M tokens)
+        if use_alternative:
+            openrouter_models = [
+                "openrouter/owl-alpha",  # 1M context, ~32K output
+                "nvidia/nemotron-3-ultra-550b-a55b:free",  # 1M context, 65K output
+            ]
+        else:
+            openrouter_models = [
+                "nvidia/nemotron-3-ultra-550b-a55b:free",  # 1M context, 65K output
+                "openrouter/owl-alpha",  # 1M context, ~32K output
+            ]
+        
+        openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not openrouter_api_key:
+            self.logger.warning("OPENROUTER_API_KEY not set in environment variables")
+            return None
+        
+        for model in openrouter_models:
+            try:
+                self.logger.info(f"Trying OpenRouter model: {model}")
+                
+                headers = {
+                    "Authorization": f"Bearer {openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://chameleon-malware-analysis.app",
+                    "X-Title": "Chameleon Malware Analysis"
+                }
+                
+                # Optimized max tokens based on model and section
+                if model == "nvidia/nemotron-3-ultra-550b-a55b:free":
+                    # Nemotron supports 65K output tokens
+                    if section_name == "final_synthesis":
+                        max_tokens = 65536  # Max for comprehensive synthesis
+                    elif section_name in ["behavior_analysis", "network_analysis"]:
+                        max_tokens = 32768  # 32K for detailed analysis
+                    else:
+                        max_tokens = 16384  # 16K for other sections
+                else:  # openrouter/owl-alpha
+                    # Owl Alpha - conservative estimate (likely 32K max)
+                    if section_name == "final_synthesis":
+                        max_tokens = 32768  # 32K max for synthesis
+                    elif section_name in ["behavior_analysis", "network_analysis"]:
+                        max_tokens = 16384  # 16K for detailed analysis
+                    else:
+                        max_tokens = 8192   # 8K for other sections
+                
+                self.logger.info(f"Using max_tokens={max_tokens} for {model}")
+                
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": max_tokens,
+                }
+                
+                # Use asyncio.wait_for for compatibility with older Python versions
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        result = await asyncio.wait_for(
+                            self._make_openrouter_request(session, headers, payload),
+                            timeout=180  # 3 minute timeout for large inputs
+                        )
+                        
+                        if result and result.get("choices"):
+                            response_text = result["choices"][0].get("message", {}).get("content", "")
+                            if response_text and len(response_text.strip()) > 50:
+                                self.logger.info(f"OpenRouter {model} succeeded with {len(response_text)} chars")
+                                return {
+                                    "response": response_text,
+                                    "model": model,
+                                    "api_key_index": -1,  # Indicates OpenRouter fallback
+                                    "provider": "openrouter"
+                                }
+                            else:
+                                self.logger.warning(f"OpenRouter {model} returned empty or too short response")
+                        else:
+                            error_msg = result.get("error", {}).get("message", "Unknown error") if isinstance(result, dict) else "Invalid response"
+                            self.logger.warning(f"OpenRouter {model} failed: {error_msg}")
+                            
+                    except asyncio.TimeoutError:
+                        self.logger.warning(f"OpenRouter {model} timed out after 180 seconds")
+                        continue
+                    except aiohttp.ClientError as e:
+                        self.logger.warning(f"OpenRouter {model} client error: {str(e)}")
+                        continue
+                        
+            except Exception as e:
+                self.logger.warning(f"OpenRouter {model} failed: {str(e)}")
+                continue
+        
+        return None
+
+    async def _make_openrouter_request(
+        self, 
+        session: aiohttp.ClientSession, 
+        headers: Dict, 
+        payload: Dict
+    ) -> Dict:
+        """Make OpenRouter API request and return JSON response."""
+        async with session.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                return {"error": {"message": f"HTTP {response.status}: {error_text[:200]}"}}
 
     def _get_model_priority(
         self, preferred_model: Optional[str], section_name: str = None
     ) -> List[str]:
         """Get model priority list, with special handling for behavior and network analysis."""
-
+        # Base priority - Gemini models first for their large context windows
+        base_models = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
+        
+        # Add preferred model if provided and not already in list
+        if preferred_model and preferred_model not in base_models:
+            base_models.insert(0, preferred_model)
+        
+        # For behavior and network analysis, prioritize higher context models
         if section_name in ["behavior_analysis", "network_analysis"]:
-            self.logger.info(f"Using HIGHER-CONTEXT Gemini model for {section_name}")
-            return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
-
-        models = []
-        if preferred_model:
-            models.append(preferred_model)
-
+            self.logger.info(f"Using HIGHER-CONTEXT models for {section_name}")
+            # Gemini 2.5 Pro has 2M context, Flash has 1M
+            priority = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]
+            if preferred_model and preferred_model not in priority:
+                priority.insert(0, preferred_model)
+            return priority
+        
+        # Add fallback priority from model service if available
         if hasattr(self.model_service, "fallback_priority"):
-            models.extend(
-                [m for m in self.model_service.fallback_priority if m not in models]
-            )
-        else:
-            models.extend(
-                ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
-            )
-
-        return models
+            models = base_models.copy()
+            for m in self.model_service.fallback_priority:
+                if m not in models:
+                    models.append(m)
+            return models
+        
+        # Note: OpenRouter models are NOT added here because they require special API handling
+        # They will be attempted in _call_with_fallback after all primary models fail
+        
+        return base_models
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count for a text string."""
